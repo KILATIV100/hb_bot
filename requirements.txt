@@ -1,4 +1,4 @@
 aiogram==3.13.1
 pydantic-settings==2.5.2
-psycopg[binary]==3.2.1
+psycopg[pool,binary]==3.2.8
 python-dotenv==1.0.1
