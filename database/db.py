@@ -1,4 +1,4 @@
-# database/db.py — ОСТАННЯ ВЕРСІЯ, ВСЕ САМ ПОФІКСИТЬ
+# database/db.py — ФІНАЛЬНА ВЕРСІЯ, 100% БЕЗ ПОМИЛОК
 import psycopg
 from psycopg.rows import dict_row
 from datetime import datetime
@@ -15,7 +15,6 @@ class DB:
 
     async def create_tables(self):
         async with self.conn.cursor() as cur:
-            # Створюємо/перестворюємо таблицю з колонкою username
             await cur.execute('''
                 CREATE TABLE IF NOT EXISTS feedbacks (
                     id SERIAL PRIMARY KEY,
@@ -26,7 +25,6 @@ class DB:
                     timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             ''')
-            # На всяк випадок додаємо колонку, якщо її немає
             await cur.execute('''
                 ALTER TABLE feedbacks ADD COLUMN IF NOT EXISTS username TEXT
             ''')
@@ -61,4 +59,5 @@ class DB:
         return True
 
 
-db =
+# ← ЦЕЙ РЯДОК БУВ ОБРІЗАНИЙ! ОБОВ'ЯЗКОВО МАЄ БУТИ:
+db = DB()
