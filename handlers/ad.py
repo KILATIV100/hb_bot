@@ -1,10 +1,11 @@
 # handlers/ad.py (приклад; для ad/other — копіюй, міняй waiting_for_news/confirm на відповідне + category)
-from aiogram import Router, F
+from aiogram import Router, F, Bot
 from aiogram.types import Message, CallbackQuery
-from states.feedback_states import FeedbackStates
 from aiogram.fsm.context import FSMContext
+
+from states.feedback_states import FeedbackStates
 from utils.notify_admins import notify_admins
-from keyboards import get_confirm_kb
+from keyboards import get_confirm_kb, get_main_menu_kb
 from database.db import db
 
 router = Router()
