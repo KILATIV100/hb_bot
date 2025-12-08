@@ -1,14 +1,8 @@
-# handlers/start.py (async db check)
-
-from aiogram import Router, F, Bot   # ← головне — додати Bot сюди
-from aiogram.types import Message, CallbackQuery
 from aiogram import Router, F
 from aiogram.types import Message
-from aiogram.filters import CommandStart
+from aiogram.filters import CommandStart, Command
 from keyboards import get_main_menu_kb
-from states.feedback_states import FeedbackStates
-from aiogram.fsm.context import FSMContext
-from database.db import db
+from config import settings
 
 router = Router()
 
@@ -19,26 +13,12 @@ async def cmd_start(message: Message):
         reply_markup=get_main_menu_kb()
     )
 
-@router.message(F.text == "Надіслати новину 📢")
-async def start_news(message: Message, state: FSMContext):
-    if not await db.check_rate_limit(message.from_user.id):
-        await message.answer("Зачекай 5 хвилин перед наступним відгуком. Антиспам! 🚫")
+@router.message(Command("id"))
+async def cmd_id(message: Message):
+    if message.from_user.id not in settings.ADMIN_IDS:
         return
-    await state.set_state(FeedbackStates.waiting_for_news)
-    await message.answer("Опиши новину: текст, фото, відео чи документ. Потім підтверди відправку.", reply_markup=None)
+    await message.answer(f"Твій ID: <code>{message.from_user.id}</code>")
 
-@router.message(F.text == "Запит про рекламу 💼")
-async def start_ad(message: Message, state: FSMContext):
-    if not await db.check_rate_limit(message.from_user.id):
-        await message.answer("Зачекай 5 хвилин перед наступним відгуком. Антиспам! 🚫")
-        return
-    await state.set_state(FeedbackStates.waiting_for_ad)
-    await message.answer("Напиши свій запит про рекламу. Можна додати деталі.", reply_markup=None)
-
-@router.message(F.text == "Інше повідомлення ✉️")
-async def start_other(message: Message, state: FSMContext):
-    if not await db.check_rate_limit(message.from_user.id):
-        await message.answer("Зачекай 5 хвилин перед наступним відгуком. Антиспам! 🚫")
-        return
-    await state.set_state(FeedbackStates.waiting_for_other)
-    await message.answer("Напиши своє повідомлення чи питання.", reply_markup=None)
+@router.message(F.text.lower().contains("меню") | F.text == "Назад")
+async def back_to_menu(message: Message):
+    await message.answer("Головне меню:", reply_markup=get_main_menu_kb())
