@@ -32,11 +32,12 @@ class DB:
             ''')
             await self.conn.commit()
 
-    async def add_feedback(self, user_id: int, category: str, content: str):
+        async def add_feedback(self, user_id: int, username: str, category: str, content: str):
         async with self.conn.cursor() as cur:
             await cur.execute(
-                "INSERT INTO feedbacks (user_id, category, content) VALUES (%s, %s, %s)",
-                (user_id, category, content)
+                """INSERT INTO feedbacks (user_id, username, category, content) 
+                   VALUES (%s, %s, %s, %s)""",
+                (user_id, username, category, content)
             )
             await cur.execute(
                 """INSERT INTO rate_limits (user_id, last_feedback) 
