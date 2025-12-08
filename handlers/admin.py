@@ -1,4 +1,6 @@
 # handlers/admin.py (async stats)
+from aiogram import Router, F, Bot   # ← головне — додати Bot сюди
+from aiogram.types import Message, CallbackQuery
 from aiogram import Router
 from aiogram.types import Message
 from aiogram.filters import Command
