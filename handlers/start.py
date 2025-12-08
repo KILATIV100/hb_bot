@@ -1,4 +1,7 @@
 # handlers/start.py (async db check)
+
+from aiogram import Router, F, Bot   # ← головне — додати Bot сюди
+from aiogram.types import Message, CallbackQuery
 from aiogram import Router, F
 from aiogram.types import Message
 from aiogram.filters import CommandStart
