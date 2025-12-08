@@ -1,29 +1,40 @@
-# main.py (async db connect, bot inject)
+# main.py
 import asyncio
 import logging
 from aiogram import Bot, Dispatcher
 from aiogram.fsm.storage.memory import MemoryStorage
+from aiogram.client.default import DefaultBotProperties
+from aiogram.enums import ParseMode
+
 from config import settings
 from database.db import db
+
+# Імпортуй свої роутери
 from handlers.start import router as start_router
 from handlers.news import router as news_router
-# Додай: from handlers.ad import router as ad_router
-# from handlers.other import router as other_router
+from handlers.ad import router as ad_router
+from handlers.other import router as other_router
 from handlers.admin import admin_router
 
 async def main():
     logging.basicConfig(level=logging.INFO)
-    await db.connect()  # Підключаємо DB
+    await db.connect()
 
-    bot = Bot(token=settings.BOT_TOKEN, parse_mode="HTML")
+    bot = Bot(
+        token=settings.BOT_TOKEN,
+        default=DefaultBotProperties(parse_mode=ParseMode.HTML)
+    )
     dp = Dispatcher(storage=MemoryStorage())
 
-    # Include routers
-    dp.include_routers(start_router, news_router, admin_router)  # + ad, other
+    dp.include_routers(
+        start_router,
+        news_router,
+        ad_router,
+        other_router,
+        admin_router
+    )
 
-    # Middleware для bot в handlers, якщо треба (але в callback ми передаємо bot вручну)
-
-    print("Бот для новин запущений на Railway! 🔥 DB connected, чекаю трафік.")
+    print("Бот для новинного каналу запущений! Аналітика + UI/UX — все на рівні.")
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
