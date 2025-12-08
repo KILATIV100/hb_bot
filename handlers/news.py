@@ -1,5 +1,4 @@
 # handlers/news.py (приклад; для ad/other — копіюй, міняй waiting_for_news/confirm на відповідне + category)
-# handlers/news.py
 from aiogram import Router, F, Bot
 from aiogram.types import Message, CallbackQuery
 from aiogram.fsm.context import FSMContext
