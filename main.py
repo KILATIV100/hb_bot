@@ -1,4 +1,3 @@
-# main.py
 import asyncio
 import logging
 from aiogram import Bot, Dispatcher
@@ -9,12 +8,11 @@ from aiogram.enums import ParseMode
 from config import settings
 from database.db import db
 
-# Імпортуй свої роутери
+# Роутери
 from handlers.start import router as start_router
 from handlers.news import router as news_router
 from handlers.ad import router as ad_router
 from handlers.other import router as other_router
-from handlers.admin import admin_router
 
 async def main():
     logging.basicConfig(level=logging.INFO)
@@ -25,14 +23,7 @@ async def main():
         default=DefaultBotProperties(parse_mode=ParseMode.HTML)
     )
     dp = Dispatcher(storage=MemoryStorage())
-
-    dp.include_routers(
-        start_router,
-        news_router,
-        ad_router,
-        other_router,
-        admin_router
-    )
+    dp.include_routers(start_router, news_router, ad_router, other_router)
 
     print("Бот для новинного каналу запущений! Аналітика + UI/UX — все на рівні.")
     await dp.start_polling(bot)
