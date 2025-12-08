@@ -8,7 +8,7 @@ from database.db import db
 
 router = Router()
 
-@router.message(F.text == "Надіслати новину")
+@router.message(F.text == "Запит про рекламу")
 async def start_news(message: Message, state: FSMContext):
     if not await db.check_rate_limit(message.from_user.id):
         await message.answer("Зачекай 5 хвилин перед наступною відправкою 🚫")
