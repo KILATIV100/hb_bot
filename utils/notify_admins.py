@@ -2,7 +2,17 @@
 from aiogram import Bot
 from config import settings
 
-async def notify_admins(bot: Bot, user_id: int, username: str, category: str, text: str = None, photo=None, document=None, video=None):
+# utils/notify_admins.py — заміни цей рядок:
+await notify_admins(bot, user_id, username, category, text=content, photo=media if isinstance(media, list) else None, document=media if hasattr(media, 'document') else None, video=media if hasattr(media, 'video') else None)
+
+# на цей простіший і 100% робочий:
+if isinstance(media, list):  # це фото
+    await notify_admins(bot, user_id, username, category, text=content, photo=media)
+elif media and hasattr(media, 'mime_type') and media.mime_type.startswith('video'):
+    await notify_admins(bot, user_id, username, category, text=content, video=media)
+elif media:
+    await notify_admins(bot, user_id, username, category, text=content, document=media)
+else:
     user_info = f"Новий {category} від @{username} (ID: {user_id})\n\n"
     if text:
         user_info += text
