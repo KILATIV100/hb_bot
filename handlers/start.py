@@ -22,3 +22,13 @@ async def cmd_id(message: Message):
 @router.message(F.text.lower().contains("меню") | F.text == "Назад")
 async def back_to_menu(message: Message):
     await message.answer("Головне меню:", reply_markup=get_main_menu_kb())
+    @router.message(Command("testgroup"))
+    
+async def test_group(message: Message):
+    if message.from_user.id not in settings.ADMIN_IDS:
+        return
+    try:
+        await message.bot.send_message(settings.FEEDBACK_CHAT_ID, "Тестове повідомлення від бота ✅\nЯкщо бачиш це — ID правильний!")
+        await message.answer("Повідомлення успішно надіслано в групу логів!")
+    except Exception as e:
+        await message.answer(f"Помилка: {e}\nМожливо, неправильний FEEDBACK_CHAT_ID")
