@@ -1,4 +1,4 @@
-# database/db.py
+# database/db.py — ОСТАННЯ ВЕРСІЯ, ВСЕ САМ ПОФІКСИТЬ
 import psycopg
 from psycopg.rows import dict_row
 from datetime import datetime
@@ -15,6 +15,7 @@ class DB:
 
     async def create_tables(self):
         async with self.conn.cursor() as cur:
+            # Створюємо/перестворюємо таблицю з колонкою username
             await cur.execute('''
                 CREATE TABLE IF NOT EXISTS feedbacks (
                     id SERIAL PRIMARY KEY,
@@ -24,6 +25,10 @@ class DB:
                     content TEXT,
                     timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
+            ''')
+            # На всяк випадок додаємо колонку, якщо її немає
+            await cur.execute('''
+                ALTER TABLE feedbacks ADD COLUMN IF NOT EXISTS username TEXT
             ''')
             await cur.execute('''
                 CREATE TABLE IF NOT EXISTS rate_limits (
@@ -36,16 +41,12 @@ class DB:
     async def add_feedback(self, user_id: int, username: str, category: str, content: str) -> int:
         async with self.conn.cursor() as cur:
             await cur.execute(
-                """INSERT INTO feedbacks (user_id, username, category, content) 
-                   VALUES (%s, %s, %s, %s) RETURNING id""",
+                "INSERT INTO feedbacks (user_id, username, category, content) VALUES (%s, %s, %s, %s) RETURNING id",
                 (user_id, username, category, content)
             )
             feedback_id = (await cur.fetchone())["id"]
-
             await cur.execute(
-                """INSERT INTO rate_limits (user_id, last_feedback) 
-                   VALUES (%s, CURRENT_TIMESTAMP) 
-                   ON CONFLICT (user_id) DO UPDATE SET last_feedback = CURRENT_TIMESTAMP""",
+                "INSERT INTO rate_limits (user_id, last_feedback) VALUES (%s, CURRENT_TIMESTAMP) ON CONFLICT (user_id) DO UPDATE SET last_feedback = CURRENT_TIMESTAMP",
                 (user_id,)
             )
             await self.conn.commit()
@@ -53,16 +54,11 @@ class DB:
 
     async def check_rate_limit(self, user_id: int) -> bool:
         async with self.conn.cursor() as cur:
-            await cur.execute(
-                "SELECT last_feedback FROM rate_limits WHERE user_id = %s",
-                (user_id,)
-            )
+            await cur.execute("SELECT last_feedback FROM rate_limits WHERE user_id = %s", (user_id,))
             row = await cur.fetchone()
-            if row:
-                delta = datetime.utcnow() - row["last_feedback"]
-                if delta.total_seconds() < 300:  # 5 хвилин
-                    return False
+            if row and (datetime.utcnow() - row["last_feedback"]).total_seconds() < 300:
+                return False
         return True
 
 
-db = DB()
+db =
