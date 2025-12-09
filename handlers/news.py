@@ -52,8 +52,24 @@ async def confirm_news(callback: CallbackQuery, state: FSMContext, bot: Bot):
     username = callback.from_user.username or "Без імені"
     is_anonymous = data.get("is_anonymous", False)
 
+    # Отримуємо file_id медіа
+    media = data.get("media")
+    photo_file_id = None
+    video_file_id = None
+    document_file_id = None
+
+    if isinstance(media, list):  # Це фото (list[PhotoSize])
+        photo_file_id = media[-1].file_id
+    elif hasattr(media, 'file_id'):
+        if hasattr(media, 'duration'):  # Це відео
+            video_file_id = media.file_id
+        else:  # Це документ
+            document_file_id = media.file_id
+
     # Спочатку додаємо в БД і отримуємо feedback_id
-    feedback_id = await db.add_feedback(callback.from_user.id, username, "новина", data["content"])
+    feedback_id = await db.add_feedback(callback.from_user.id, username, "новина", data["content"],
+                                       photo_file_id=photo_file_id, video_file_id=video_file_id,
+                                       document_file_id=document_file_id)
 
     # Потім повідомляємо адмінів з feedback_id
     await notify_admins(
