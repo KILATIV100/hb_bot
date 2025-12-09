@@ -25,12 +25,12 @@ def get_confirm_kb() -> InlineKeyboardMarkup:
     return kb
 
 
-def get_anonymity_kb() -> InlineKeyboardMarkup:
+def get_anonymity_kb(feedback_type: str = "news") -> InlineKeyboardMarkup:
     """Клавіатура для вибору способу відправки"""
     kb = InlineKeyboardMarkup(inline_keyboard=[
         [
-            InlineKeyboardButton(text="👤 Підписано", callback_data="anonymous_no"),
-            InlineKeyboardButton(text="👻 Анонімно", callback_data="anonymous_yes")
+            InlineKeyboardButton(text="👤 Підписано", callback_data=f"anonymous_no_{feedback_type}"),
+            InlineKeyboardButton(text="👻 Анонімно", callback_data=f"anonymous_yes_{feedback_type}")
         ],
         [
             InlineKeyboardButton(text="❌ Скасувати", callback_data="cancel_send")

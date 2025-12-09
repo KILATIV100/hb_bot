@@ -149,12 +149,29 @@ async def quick_reply(callback: CallbackQuery, state: FSMContext):
     # Зберігаємо в БД
     reply_id = await db.add_reply(feedback_id, callback.from_user.id, reply_text)
 
+    # Отримуємо group_message_id для reply в групі
+    feedback = await db.get_feedback(feedback_id)
+    group_message_id = feedback.get("group_message_id") if feedback else None
+
     # Відправляємо користувачу
     try:
         await callback.bot.send_message(
             user_id,
             f"📬 <b>Адмін відповив на твоє повідомлення!</b>\n\n{reply_text}"
         )
+
+        # Публікуємо відповідь в групі логів як reply на оригінальне повідомлення
+        if group_message_id:
+            try:
+                await callback.bot.send_message(
+                    settings.FEEDBACK_CHAT_ID,
+                    f"💬 <b>Відповідь адміна:</b>\n\n{reply_text}",
+                    reply_to_message_id=group_message_id,
+                    parse_mode=ParseMode.HTML
+                )
+            except Exception as e:
+                print(f"Не вдалося надіслати reply в групу: {e}")
+
         await callback.message.answer(f"✅ Відповідь надіслана юзеру @{username}!")
     except Exception as e:
         await callback.message.answer(f"❌ Помилка при надсиланні: {e}")
@@ -180,12 +197,29 @@ async def send_custom_reply(message: Message, state: FSMContext):
     # Зберігаємо відповідь в БД
     reply_id = await db.add_reply(feedback_id, message.from_user.id, message.text)
 
+    # Отримуємо group_message_id для reply в групі
+    feedback = await db.get_feedback(feedback_id)
+    group_message_id = feedback.get("group_message_id") if feedback else None
+
     # Відправляємо відповідь користувачу
     try:
         await message.bot.send_message(
             user_id,
             f"📬 <b>Адмін відповив на твоє повідомлення!</b>\n\n{message.text}"
         )
+
+        # Публікуємо відповідь в групі логів як reply на оригінальне повідомлення
+        if group_message_id:
+            try:
+                await message.bot.send_message(
+                    settings.FEEDBACK_CHAT_ID,
+                    f"💬 <b>Відповідь адміна:</b>\n\n{message.text}",
+                    reply_to_message_id=group_message_id,
+                    parse_mode=ParseMode.HTML
+                )
+            except Exception as e:
+                print(f"Не вдалося надіслати reply в групу: {e}")
+
         await message.answer(f"✅ Відповідь надіслана юзеру @{username}!")
     except Exception as e:
         await message.answer(f"❌ Помилка при надсиланні: {e}")

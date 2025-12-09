@@ -17,16 +17,12 @@ async def start_news(message: Message, state: FSMContext):
     await state.update_data(feedback_type="news")
     await message.answer(
         "Як ти хочеш, щоб твоя новина була відправлена?",
-        reply_markup=get_anonymity_kb()
+        reply_markup=get_anonymity_kb("news")
     )
 
-@router.callback_query(F.data.in_(["anonymous_yes", "anonymous_no"]), FeedbackStates.choosing_anonymity)
+@router.callback_query(F.data.in_(["anonymous_yes_news", "anonymous_no_news"]), FeedbackStates.choosing_anonymity)
 async def choose_anonymity_news(callback: CallbackQuery, state: FSMContext):
-    data = await state.get_data()
-    if data.get("feedback_type") != "news":
-        return
-
-    is_anonymous = callback.data == "anonymous_yes"
+    is_anonymous = callback.data == "anonymous_yes_news"
     await state.update_data(is_anonymous=is_anonymous)
     await state.set_state(FeedbackStates.waiting_for_news)
 
@@ -72,7 +68,7 @@ async def confirm_news(callback: CallbackQuery, state: FSMContext, bot: Bot):
                                        document_file_id=document_file_id)
 
     # Потім повідомляємо адмінів з feedback_id
-    await notify_admins(
+    group_message_id = await notify_admins(
         bot=bot,
         user_id=callback.from_user.id,
         username=username,
@@ -84,6 +80,10 @@ async def confirm_news(callback: CallbackQuery, state: FSMContext, bot: Bot):
         video=data.get("media") if hasattr(data.get("media", {}), 'file_id') else None,
         is_anonymous=is_anonymous
     )
+
+    # Зберігаємо group_message_id в БД для подальших reply
+    if group_message_id:
+        await db.update_group_message_id(feedback_id, group_message_id)
 
     await callback.message.answer("Дякуємо! Новина надіслана ❤️", reply_markup=get_main_menu_kb())
     await state.clear()
