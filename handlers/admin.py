@@ -12,11 +12,10 @@ admin_router = Router()
 
 # Словник з готовими відповідями
 QUICK_REPLIES = {
-    "quick_reply_thanks": "✓ Дякуємо за внесок! Твоя пропозиція дуже цінна для нас.",
-    "quick_reply_review": "📋 Твоє повідомлення на розгляді. Ми проаналізуємо його та дамо відповідь найближчим часом.",
-    "quick_reply_accepted": "✅ Прекрасно! Твоя пропозиція прийнята. Спасибі за участь!",
-    "quick_reply_rejected": "❌ На жаль, твоя пропозиція не відповідає нашим критеріям. Спасибі за розуміння!",
-    "quick_reply_clarify": "❓ Просимо уточнити деякі моменти у твоєму повідомленні. Напиши більше деталей.",
+    "quick_reply_published": "✅ Дякуємо за участь! Новина вже на каналі.",
+    "quick_reply_review": "⏳ Ваше повідомлення отримано. Розглядаємо.",
+    "quick_reply_rejected": "❌ Дякуємо за час але Новина не відповідає критеріям.",
+    "quick_reply_clarify": "❓ Дякуємо. Просимо уточнити джерело/деталі/спосіб звʼязку.",
 }
 
 @admin_router.message(Command('stats'))
@@ -36,9 +35,13 @@ async def cmd_stats(message: Message):
     response = f"📊 Аналітика:\n\n📰 За день:\n{day_str}\n\n📆 За тиждень:\n{week_str}\n\n📋 За весь час:\n{all_str}"
     await message.answer(response)
 
+# ════════════════════════════════════════
+# ОБРОБНИКИ З ГРУПИ ЛОГІВ (FEEDBACK_CHAT_ID)
+# ════════════════════════════════════════
+
 @admin_router.callback_query(F.data.startswith("reply_to_"))
 async def reply_to_feedback(callback: CallbackQuery, state: FSMContext):
-    """Обробник для кнопки 'Відповісти'"""
+    """Обробник для кнопки 'Відповісти' з групи логів"""
     if callback.from_user.id not in settings.ADMIN_IDS:
         await callback.answer("Тільки для адмінів! 🚫", show_alert=True)
         return
@@ -53,6 +56,7 @@ async def reply_to_feedback(callback: CallbackQuery, state: FSMContext):
     await state.set_state(AdminStates.replying)
     await state.update_data(feedback_id=feedback_id, replying_to=feedback["user_id"], username=feedback["username"])
 
+    # Відправляємо меню в приватний чат адміну
     await callback.message.answer(
         f"💬 <b>Відповідь для @{feedback['username']}</b>\n\n"
         f"📝 Його повідомлення: <code>{feedback['content']}</code>\n\n"
@@ -60,6 +64,36 @@ async def reply_to_feedback(callback: CallbackQuery, state: FSMContext):
         reply_markup=get_quick_replies_kb()
     )
     await callback.answer()
+
+@admin_router.callback_query(F.data.startswith("publish_to_"))
+async def publish_to_channel(callback: CallbackQuery):
+    """Обробник для кнопки 'Опублікувати' з групи логів"""
+    if callback.from_user.id not in settings.ADMIN_IDS:
+        await callback.answer("Тільки для адмінів! 🚫", show_alert=True)
+        return
+
+    feedback_id = int(callback.data.replace("publish_to_", ""))
+    feedback = await db.get_feedback(feedback_id)
+
+    if not feedback:
+        await callback.answer("Feedback не знайдено!", show_alert=True)
+        return
+
+    # Формуємо текст для публікації з префіксом #нампишуть
+    publish_text = f"#нампишуть\n\n{feedback['content']}"
+
+    try:
+        # Публікуємо на основний канал
+        await callback.bot.send_message(
+            settings.CHANNEL_ID,
+            publish_text
+        )
+        await callback.answer("✅ Опубліковано на канал!", show_alert=True)
+        await callback.message.edit_text(
+            callback.message.text + "\n\n✅ <b>ОПУБЛІКОВАНО НА КАНАЛ</b>"
+        )
+    except Exception as e:
+        await callback.answer(f"❌ Помилка при публікації: {e}", show_alert=True)
 
 @admin_router.callback_query(F.data.startswith("quick_reply_"))
 async def quick_reply(callback: CallbackQuery, state: FSMContext):
