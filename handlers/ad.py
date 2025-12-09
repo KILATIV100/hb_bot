@@ -90,7 +90,7 @@ async def confirm_ad(callback: CallbackQuery, state: FSMContext, bot: Bot):
     await callback.answer()
 
 @router.callback_query(F.data == "cancel_send")
-async def cancel(callback: CallbackQuery, state: FSMContext):
+async def cancel_ad(callback: CallbackQuery, state: FSMContext):
     await callback.message.answer("Скасовано. Обери дію:", reply_markup=get_main_menu_kb())
     await state.clear()
     await callback.answer()
