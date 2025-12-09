@@ -1,13 +1,14 @@
-# states/feedback_states.py (без змін)
+# states/feedback_states.py
 from aiogram.fsm.state import StatesGroup, State
 
 class FeedbackStates(StatesGroup):
-    # Стейти для вибору типу
-    choosing_category = State()
+    # Вибір способу відправки (анонімно чи підписано)
     choosing_anonymity = State()
 
-    # Стейти для надсилання контенту
+    # Очікування контенту за типом
     waiting_for_news = State()
     waiting_for_ad = State()
     waiting_for_other = State()
+
+    # Підтвердження перед відправкою
     confirming = State()

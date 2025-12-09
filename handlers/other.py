@@ -14,13 +14,18 @@ async def start_other(message: Message, state: FSMContext):
         await message.answer("Зачекай 5 хвилин перед наступною відправкою 🚫")
         return
     await state.set_state(FeedbackStates.choosing_anonymity)
+    await state.update_data(feedback_type="other")
     await message.answer(
         "Як ти хочеш, щоб твоє повідомлення було відправлене?",
         reply_markup=get_anonymity_kb()
     )
 
 @router.callback_query(F.data.in_(["anonymous_yes", "anonymous_no"]), FeedbackStates.choosing_anonymity)
-async def choose_anonymity(callback: CallbackQuery, state: FSMContext):
+async def choose_anonymity_other(callback: CallbackQuery, state: FSMContext):
+    data = await state.get_data()
+    if data.get("feedback_type") != "other":
+        return
+
     is_anonymous = callback.data == "anonymous_yes"
     await state.update_data(is_anonymous=is_anonymous)
     await state.set_state(FeedbackStates.waiting_for_other)
