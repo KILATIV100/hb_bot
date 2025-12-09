@@ -5,7 +5,8 @@ class Settings(BaseSettings):
     BOT_TOKEN: str
     DATABASE_URL: str
     ADMIN_IDS: List[int]
-    FEEDBACK_CHAT_ID: int   # обов'язково вказуємо тип int
+    FEEDBACK_CHAT_ID: int   # Група для логів повідомлень
+    CHANNEL_ID: int  # Основний канал для публікацій
 
     class Config:
         env_file = ".env"

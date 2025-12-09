@@ -16,47 +16,50 @@ async def notify_admins(
     video=None,
     is_anonymous: bool = False,
 ):
-    """Надсилає повідомлення всім адмінам + в лог-групу"""
+    """Надсилає повідомлення всім адмінам + в лог-групу з кнопками"""
     username = username or "Без юзернейму"
 
     if is_anonymous:
-        user_info = f"Новий {category} 👻 (анонімно)\n\n"
+        user_info = f"👻 <b>Новий {category} (анонімно)</b>\n\n"
     else:
-        user_info = f"Новий {category} від @{username} (ID: {user_id})\n\n"
+        user_info = f"📨 <b>Новий {category}</b> від @{username} (ID: {user_id})\n\n"
 
     if text:
         user_info += text
 
-    # Клавіатура для адмінів з кнопкою "Відповісти"
-    reply_kb = None
+    # Клавіатура ДЛЯ ГРУПИ ЛОГІВ з двома кнопками
+    group_kb = None
     if feedback_id and not is_anonymous:
-        reply_kb = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="💬 Відповісти", callback_data=f"reply_to_{feedback_id}")]
+        group_kb = InlineKeyboardMarkup(inline_keyboard=[
+            [
+                InlineKeyboardButton(text="💬 Відповісти", callback_data=f"reply_to_{feedback_id}"),
+                InlineKeyboardButton(text="✅ Опублікувати", callback_data=f"publish_to_{feedback_id}")
+            ]
         ])
 
-    # Надсилаємо кожному адміну
+    # Надсилаємо кожному адміну БЕЗ КНОПОК (приватні чати)
     for admin_id in settings.ADMIN_IDS:
         try:
             if photo:
-                await bot.send_photo(admin_id, photo[-1].file_id, caption=user_info, reply_markup=reply_kb)
+                await bot.send_photo(admin_id, photo[-1].file_id, caption=user_info)
             elif document:
-                await bot.send_document(admin_id, document.file_id, caption=user_info, reply_markup=reply_kb)
+                await bot.send_document(admin_id, document.file_id, caption=user_info)
             elif video:
-                await bot.send_video(admin_id, video.file_id, caption=user_info, reply_markup=reply_kb)
+                await bot.send_video(admin_id, video.file_id, caption=user_info)
             else:
-                await bot.send_message(admin_id, user_info, reply_markup=reply_kb)
+                await bot.send_message(admin_id, user_info)
         except Exception as e:
             print(f"Не вдалося надіслати адміну {admin_id}: {e}")
 
-    # Надсилаємо в загальну групу логів (без кнопки)
+    # Надсилаємо в групу логів З КНОПКАМИ
     try:
         if photo:
-            await bot.send_photo(settings.FEEDBACK_CHAT_ID, photo[-1].file_id, caption=user_info)
+            await bot.send_photo(settings.FEEDBACK_CHAT_ID, photo[-1].file_id, caption=user_info, reply_markup=group_kb)
         elif document:
-            await bot.send_document(settings.FEEDBACK_CHAT_ID, document.file_id, caption=user_info)
+            await bot.send_document(settings.FEEDBACK_CHAT_ID, document.file_id, caption=user_info, reply_markup=group_kb)
         elif video:
-            await bot.send_video(settings.FEEDBACK_CHAT_ID, video.file_id, caption=user_info)
+            await bot.send_video(settings.FEEDBACK_CHAT_ID, video.file_id, caption=user_info, reply_markup=group_kb)
         else:
-            await bot.send_message(settings.FEEDBACK_CHAT_ID, user_info)
+            await bot.send_message(settings.FEEDBACK_CHAT_ID, user_info, reply_markup=group_kb)
     except Exception as e:
         print(f"Не вдалося надіслати в групу логів: {e}")
