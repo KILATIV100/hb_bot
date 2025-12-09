@@ -3,18 +3,33 @@ from aiogram.types import Message, CallbackQuery
 from aiogram.fsm.context import FSMContext
 from states.feedback_states import FeedbackStates
 from utils.notify_admins import notify_admins
-from keyboards import get_confirm_kb, get_main_menu_kb
+from keyboards import get_anonymity_kb, get_confirm_kb, get_main_menu_kb
 from database.db import db
 
 router = Router()
 
-@router.message(F.text == "Надіслати новину")
+@router.message(F.text.in_(["📰 Надіслати новину", "Надіслати новину"]))
 async def start_news(message: Message, state: FSMContext):
     if not await db.check_rate_limit(message.from_user.id):
         await message.answer("Зачекай 5 хвилин перед наступною відправкою 🚫")
         return
+    await state.set_state(FeedbackStates.choosing_anonymity)
+    await message.answer(
+        "Як ти хочеш, щоб твоя новина була відправлена?",
+        reply_markup=get_anonymity_kb()
+    )
+
+@router.callback_query(F.data.in_(["anonymous_yes", "anonymous_no"]), FeedbackStates.choosing_anonymity)
+async def choose_anonymity(callback: CallbackQuery, state: FSMContext):
+    is_anonymous = callback.data == "anonymous_yes"
+    await state.update_data(is_anonymous=is_anonymous)
     await state.set_state(FeedbackStates.waiting_for_news)
-    await message.answer("Надішли новину (текст + фото/відео/файл):", reply_markup=get_confirm_kb())
+
+    if is_anonymous:
+        await callback.message.edit_text("👻 Чудово! Тепер надішли новину (текст + фото/відео/файл):")
+    else:
+        await callback.message.edit_text("👤 Чудово! Тепер надішли новину (текст + фото/відео/файл):")
+    await callback.answer()
 
 @router.message(FeedbackStates.waiting_for_news)
 async def receive_news(message: Message, state: FSMContext):
@@ -30,7 +45,8 @@ async def receive_news(message: Message, state: FSMContext):
 async def confirm_news(callback: CallbackQuery, state: FSMContext, bot: Bot):
     data = await state.get_data()
     username = callback.from_user.username or "Без імені"
-    
+    is_anonymous = data.get("is_anonymous", False)
+
     await notify_admins(
         bot=bot,
         user_id=callback.from_user.id,
@@ -39,9 +55,10 @@ async def confirm_news(callback: CallbackQuery, state: FSMContext, bot: Bot):
         text=data["content"],
         photo=data.get("media") if isinstance(data.get("media"), list) else None,
         document=data.get("media") if hasattr(data.get("media", {}), 'file_id') and not isinstance(data.get("media"), list) else None,
-        video=data.get("media") if hasattr(data.get("media", {}), 'file_id') else None
+        video=data.get("media") if hasattr(data.get("media", {}), 'file_id') else None,
+        is_anonymous=is_anonymous
     )
-    
+
     await db.add_feedback(callback.from_user.id, username, "новина", data["content"])
     await callback.message.answer("Дякуємо! Новина надіслана ❤️", reply_markup=get_main_menu_kb())
     await state.clear()
