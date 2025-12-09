@@ -12,3 +12,7 @@ class FeedbackStates(StatesGroup):
 
     # Підтвердження перед відправкою
     confirming = State()
+
+class AdminStates(StatesGroup):
+    # Ввод ответа на feedback
+    replying = State()

@@ -52,11 +52,16 @@ async def confirm_news(callback: CallbackQuery, state: FSMContext, bot: Bot):
     username = callback.from_user.username or "Без імені"
     is_anonymous = data.get("is_anonymous", False)
 
+    # Спочатку додаємо в БД і отримуємо feedback_id
+    feedback_id = await db.add_feedback(callback.from_user.id, username, "новина", data["content"])
+
+    # Потім повідомляємо адмінів з feedback_id
     await notify_admins(
         bot=bot,
         user_id=callback.from_user.id,
         username=username,
         category="новина",
+        feedback_id=feedback_id,
         text=data["content"],
         photo=data.get("media") if isinstance(data.get("media"), list) else None,
         document=data.get("media") if hasattr(data.get("media", {}), 'file_id') and not isinstance(data.get("media"), list) else None,
@@ -64,7 +69,6 @@ async def confirm_news(callback: CallbackQuery, state: FSMContext, bot: Bot):
         is_anonymous=is_anonymous
     )
 
-    await db.add_feedback(callback.from_user.id, username, "новина", data["content"])
     await callback.message.answer("Дякуємо! Новина надіслана ❤️", reply_markup=get_main_menu_kb())
     await state.clear()
     await callback.answer()
