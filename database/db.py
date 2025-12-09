@@ -22,11 +22,20 @@ class DB:
                     username TEXT,
                     category TEXT,
                     content TEXT,
+                    photo_file_id TEXT,
+                    video_file_id TEXT,
+                    document_file_id TEXT,
                     timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             ''')
             await cur.execute('''
-                ALTER TABLE feedbacks ADD COLUMN IF NOT EXISTS username TEXT
+                ALTER TABLE feedbacks ADD COLUMN IF NOT EXISTS photo_file_id TEXT
+            ''')
+            await cur.execute('''
+                ALTER TABLE feedbacks ADD COLUMN IF NOT EXISTS video_file_id TEXT
+            ''')
+            await cur.execute('''
+                ALTER TABLE feedbacks ADD COLUMN IF NOT EXISTS document_file_id TEXT
             ''')
             await cur.execute('''
                 CREATE TABLE IF NOT EXISTS rate_limits (
@@ -45,11 +54,13 @@ class DB:
             ''')
             await self.conn.commit()
 
-    async def add_feedback(self, user_id: int, username: str, category: str, content: str) -> int:
+    async def add_feedback(self, user_id: int, username: str, category: str, content: str,
+                          photo_file_id: str | None = None, video_file_id: str | None = None,
+                          document_file_id: str | None = None) -> int:
         async with self.conn.cursor() as cur:
             await cur.execute(
-                "INSERT INTO feedbacks (user_id, username, category, content) VALUES (%s, %s, %s, %s) RETURNING id",
-                (user_id, username, category, content)
+                "INSERT INTO feedbacks (user_id, username, category, content, photo_file_id, video_file_id, document_file_id) VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING id",
+                (user_id, username, category, content, photo_file_id, video_file_id, document_file_id)
             )
             feedback_id = (await cur.fetchone())["id"]
             await cur.execute(

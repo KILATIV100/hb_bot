@@ -3,6 +3,7 @@ from aiogram import Router, F
 from aiogram.types import Message, CallbackQuery
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
+from aiogram.enums import ParseMode
 from states.feedback_states import AdminStates
 from keyboards import get_quick_replies_kb
 from config import settings
@@ -83,11 +84,35 @@ async def publish_to_channel(callback: CallbackQuery):
     publish_text = f"#нампишуть\n\n{feedback['content']}"
 
     try:
-        # Публікуємо на основний канал
-        await callback.bot.send_message(
-            settings.CHANNEL_ID,
-            publish_text
-        )
+        # Публікуємо на основний канал з медіа (якщо є)
+        if feedback.get('photo_file_id'):
+            await callback.bot.send_photo(
+                settings.CHANNEL_ID,
+                feedback['photo_file_id'],
+                caption=publish_text,
+                parse_mode=ParseMode.HTML
+            )
+        elif feedback.get('video_file_id'):
+            await callback.bot.send_video(
+                settings.CHANNEL_ID,
+                feedback['video_file_id'],
+                caption=publish_text,
+                parse_mode=ParseMode.HTML
+            )
+        elif feedback.get('document_file_id'):
+            await callback.bot.send_document(
+                settings.CHANNEL_ID,
+                feedback['document_file_id'],
+                caption=publish_text,
+                parse_mode=ParseMode.HTML
+            )
+        else:
+            await callback.bot.send_message(
+                settings.CHANNEL_ID,
+                publish_text,
+                parse_mode=ParseMode.HTML
+            )
+
         await callback.answer("✅ Опубліковано на канал!", show_alert=True)
         await callback.message.edit_text(
             callback.message.text + "\n\n✅ <b>ОПУБЛІКОВАНО НА КАНАЛ</b>"
