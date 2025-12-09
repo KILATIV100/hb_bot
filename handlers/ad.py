@@ -11,7 +11,7 @@ router = Router()
 @router.message(F.text.in_(["📢 Запит про рекламу", "Запит про рекламу"]))
 async def start_ad(message: Message, state: FSMContext):
     if not await db.check_rate_limit(message.from_user.id):
-        await message.answer("Зачекай 5 хвилин перед наступною відправкою 🚫")
+        await message.answer("Зачекай 1 хвилину перед наступною відправкою 🚫")
         return
     await state.set_state(FeedbackStates.choosing_anonymity)
     await state.update_data(feedback_type="ad")

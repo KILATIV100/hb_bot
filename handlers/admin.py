@@ -3,7 +3,7 @@ from aiogram import Router, F
 from aiogram.types import Message, CallbackQuery
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
-from aiogram.enums import ParseMode
+from aiogram.enums import ParseMode, ChatType
 from states.feedback_states import AdminStates
 from keyboards import get_quick_replies_kb
 from config import settings
@@ -225,3 +225,46 @@ async def send_custom_reply(message: Message, state: FSMContext):
         await message.answer(f"❌ Помилка при надсиланні: {e}")
 
     await state.clear()
+
+# ════════════════════════════════════════════════════════════════════════════
+# ПРЯМА ПЕРЕПИСКА З ГРУПИ - ОБРОБНИК ДЛЯ REPLY НА ПОВІДОМЛЕННЯ
+# ════════════════════════════════════════════════════════════════════════════
+
+@admin_router.message(F.chat.type == ChatType.SUPERGROUP, F.reply_to_message)
+async def handle_group_reply(message: Message):
+    """Обробник для reply на повідомлення в групі логів від адміна"""
+    # Перевірка, що це адмін групи
+    if message.from_user.id not in settings.ADMIN_IDS:
+        return
+
+    # Перевірка, що це саме група логів
+    if message.chat.id != settings.FEEDBACK_CHAT_ID:
+        return
+
+    # Отримуємо оригінальне повідомлення, на яке адмін відповідає
+    replied_message_id = message.reply_to_message.message_id
+
+    # Знаходимо feedback за group_message_id
+    feedback = await db.get_feedback_by_group_message_id(replied_message_id)
+
+    if not feedback:
+        await message.answer("❌ Не знайдено оригінального повідомлення в БД")
+        return
+
+    user_id = feedback["user_id"]
+    username = feedback["username"]
+    feedback_id = feedback["id"]
+
+    # Зберігаємо reply в БД
+    reply_id = await db.add_reply(feedback_id, message.from_user.id, message.text)
+
+    # Відправляємо користувачу
+    try:
+        await message.bot.send_message(
+            user_id,
+            f"📬 <b>Адмін відповив на твоє повідомлення!</b>\n\n{message.text}",
+            parse_mode=ParseMode.HTML
+        )
+        await message.answer("✅ Відповідь надіслана користувачу!")
+    except Exception as e:
+        await message.answer(f"❌ Помилка при надсиланні: {e}")
