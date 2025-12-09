@@ -51,3 +51,24 @@ def get_edit_kb() -> InlineKeyboardMarkup:
         ]
     ])
     return kb
+
+
+def get_quick_replies_kb() -> InlineKeyboardMarkup:
+    """Клавіатура з готовими відповідями для адмінів"""
+    quick_replies = [
+        ("✓ Дякуємо за внесок!", "quick_reply_thanks"),
+        ("📋 На розгляді", "quick_reply_review"),
+        ("✅ Прийнято", "quick_reply_accepted"),
+        ("❌ Відхилено", "quick_reply_rejected"),
+        ("❓ Потребує уточнення", "quick_reply_clarify"),
+        ("💬 Напиши власну відповідь", "quick_reply_custom"),
+    ]
+
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text=text, callback_data=data) for text, data in quick_replies[:2]],
+        [InlineKeyboardButton(text=quick_replies[2][0], callback_data=quick_replies[2][1]),
+         InlineKeyboardButton(text=quick_replies[3][0], callback_data=quick_replies[3][1])],
+        [InlineKeyboardButton(text=quick_replies[4][0], callback_data=quick_replies[4][1])],
+        [InlineKeyboardButton(text=quick_replies[5][0], callback_data=quick_replies[5][1])],
+    ])
+    return kb

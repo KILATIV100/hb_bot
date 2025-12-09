@@ -24,7 +24,7 @@ async def main():
         default=DefaultBotProperties(parse_mode=ParseMode.HTML)
     )
     dp = Dispatcher(storage=MemoryStorage())
-    dp.include_routers(start_router, news_router, ad_router, other_router, admin_router)
+    dp.include_routers(admin_router, start_router, news_router, ad_router, other_router)
 
     print("Бот для новинного каналу запущений! Аналітика + UI/UX — все на рівні.")
     await dp.start_polling(bot)
