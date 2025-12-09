@@ -16,8 +16,9 @@ async def notify_admins(
     document=None,
     video=None,
     is_anonymous: bool = False,
-):
-    """Надсилає повідомлення всім адмінам + в лог-групу з кнопками"""
+) -> int | None:
+    """Надсилає повідомлення всім адмінам + в лог-групу з кнопками
+    Повертає message_id з групи логів для подальших reply"""
     username = username or "Без юзернейму"
 
     if is_anonymous:
@@ -52,18 +53,22 @@ async def notify_admins(
         except Exception as e:
             print(f"Не вдалося надіслати адміну {admin_id}: {e}")
 
-    # Надсилаємо в групу логів З КНОПКАМИ
+    # Надсилаємо в групу логів З КНОПКАМИ та повертаємо message_id
+    group_message_id = None
     try:
         if photo:
-            await bot.send_photo(settings.FEEDBACK_CHAT_ID, photo[-1].file_id, caption=user_info,
+            msg = await bot.send_photo(settings.FEEDBACK_CHAT_ID, photo[-1].file_id, caption=user_info,
                                parse_mode=ParseMode.HTML, reply_markup=group_kb)
         elif document:
-            await bot.send_document(settings.FEEDBACK_CHAT_ID, document.file_id, caption=user_info,
+            msg = await bot.send_document(settings.FEEDBACK_CHAT_ID, document.file_id, caption=user_info,
                                   parse_mode=ParseMode.HTML, reply_markup=group_kb)
         elif video:
-            await bot.send_video(settings.FEEDBACK_CHAT_ID, video.file_id, caption=user_info,
+            msg = await bot.send_video(settings.FEEDBACK_CHAT_ID, video.file_id, caption=user_info,
                                parse_mode=ParseMode.HTML, reply_markup=group_kb)
         else:
-            await bot.send_message(settings.FEEDBACK_CHAT_ID, user_info, reply_markup=group_kb)
+            msg = await bot.send_message(settings.FEEDBACK_CHAT_ID, user_info, reply_markup=group_kb)
+        group_message_id = msg.message_id
     except Exception as e:
         print(f"Не вдалося надіслати в групу логів: {e}")
+
+    return group_message_id

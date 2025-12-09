@@ -38,6 +38,9 @@ class DB:
                 ALTER TABLE feedbacks ADD COLUMN IF NOT EXISTS document_file_id TEXT
             ''')
             await cur.execute('''
+                ALTER TABLE feedbacks ADD COLUMN IF NOT EXISTS group_message_id INT
+            ''')
+            await cur.execute('''
                 CREATE TABLE IF NOT EXISTS rate_limits (
                     user_id BIGINT PRIMARY KEY,
                     last_feedback TIMESTAMP
@@ -122,6 +125,15 @@ class DB:
             reply_id = (await cur.fetchone())["id"]
             await self.conn.commit()
         return reply_id
+
+    async def update_group_message_id(self, feedback_id: int, group_message_id: int) -> None:
+        """Оновити group_message_id для feedback"""
+        async with self.conn.cursor() as cur:
+            await cur.execute(
+                "UPDATE feedbacks SET group_message_id = %s WHERE id = %s",
+                (group_message_id, feedback_id)
+            )
+            await self.conn.commit()
 
 
 db = DB()
