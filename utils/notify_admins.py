@@ -12,10 +12,16 @@ async def notify_admins(
     photo=None,
     document=None,
     video=None,
+    is_anonymous: bool = False,
 ):
     """Надсилає повідомлення всім адмінам + в лог-групу"""
     username = username or "Без юзернейму"
-    user_info = f"Новий {category} від @{username} (ID: {user_id})\n\n"
+
+    if is_anonymous:
+        user_info = f"Новий {category} 👻 (анонімно)\n\n"
+    else:
+        user_info = f"Новий {category} від @{username} (ID: {user_id})\n\n"
+
     if text:
         user_info += text
 
