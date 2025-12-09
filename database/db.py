@@ -77,7 +77,7 @@ class DB:
         async with self.conn.cursor() as cur:
             await cur.execute("SELECT last_feedback FROM rate_limits WHERE user_id = %s", (user_id,))
             row = await cur.fetchone()
-            if row and (datetime.utcnow() - row["last_feedback"]).total_seconds() < 300:
+            if row and (datetime.utcnow() - row["last_feedback"]).total_seconds() < 60:
                 return False
         return True
 
@@ -134,6 +134,12 @@ class DB:
                 (group_message_id, feedback_id)
             )
             await self.conn.commit()
+
+    async def get_feedback_by_group_message_id(self, group_message_id: int) -> dict | None:
+        """Отримати feedback за group_message_id (для reply в групі)"""
+        async with self.conn.cursor() as cur:
+            await cur.execute("SELECT * FROM feedbacks WHERE group_message_id = %s", (group_message_id,))
+            return await cur.fetchone()
 
 
 db = DB()

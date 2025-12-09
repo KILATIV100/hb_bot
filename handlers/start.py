@@ -1,9 +1,12 @@
 # handlers/start.py
-from aiogram import Router, F
+from aiogram import Router, F, Bot
 from aiogram.types import Message
 from aiogram.filters import CommandStart, Command
+from aiogram.fsm.context import FSMContext
 from keyboards import get_main_menu_kb
 from config import settings
+from database.db import db
+from utils.notify_admins import notify_admins
 
 router = Router()
 
@@ -54,7 +57,7 @@ async def cmd_help_button(message: Message):
         "<b>💬 Інше повідомлення:</b>\n"
         "Питання, пропозиції, критика - поділись з нами!\n\n"
         "<b>⏱️ Обмеження:</b>\n"
-        "Одне повідомлення на 5 хвилин (Антиспам)\n\n"
+        "Одне повідомлення на 1 хвилину (Антиспам)\n\n"
         "<b>❓ Питання?</b>\n"
         "Напиши /help для довідки"
     )
@@ -72,7 +75,7 @@ async def cmd_help(message: Message):
         "<b>💬 Інше повідомлення:</b>\n"
         "Питання, пропозиції, критика - поділись з нами!\n\n"
         "<b>⏱️ Обмеження:</b>\n"
-        "Одне повідомлення на 5 хвилин (Антиспам)\n\n"
+        "Одне повідомлення на 1 хвилину (Антиспам)\n\n"
         "<b>Команди адмінів:</b>\n"
         "/stats - аналітика\n"
         "/id - твій ID\n"
@@ -94,3 +97,33 @@ async def test_group(message: Message):
         await message.answer("Повідомлення успішно надіслано в групу логів!")
     except Exception as e:
         await message.answer(f"Помилка: {e}\nПеревір FEEDBACK_CHAT_ID")
+
+# Обробник для прямих текстових повідомлень (без меню)
+@router.message(F.text)
+async def handle_direct_message(message: Message, bot: Bot):
+    """Ловить звичайні текстові повідомлення, написані прямо в боті"""
+    if not await db.check_rate_limit(message.from_user.id):
+        await message.answer("Зачекай 1 хвилину перед наступною відправкою 🚫")
+        return
+
+    username = message.from_user.username or "Без імені"
+
+    # Додаємо feedback як "інше"
+    feedback_id = await db.add_feedback(message.from_user.id, username, "інше", message.text)
+
+    # Відправляємо в групу логів
+    group_message_id = await notify_admins(
+        bot=bot,
+        user_id=message.from_user.id,
+        username=username,
+        category="інше",
+        feedback_id=feedback_id,
+        text=message.text,
+        is_anonymous=False
+    )
+
+    # Зберігаємо group_message_id
+    if group_message_id:
+        await db.update_group_message_id(feedback_id, group_message_id)
+
+    await message.answer("✅ Твоє повідомлення отримано! Дякуємо за участь ❤️", reply_markup=get_main_menu_kb())

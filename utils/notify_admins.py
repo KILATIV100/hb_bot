@@ -21,10 +21,18 @@ async def notify_admins(
     Повертає message_id з групи логів для подальших reply"""
     username = username or "Без юзернейму"
 
+    # Категорія з емодзі
+    category_emoji = {
+        "новина": "📰",
+        "реклама": "📢",
+        "інше": "💬"
+    }
+    emoji = category_emoji.get(category, "📨")
+
     if is_anonymous:
-        user_info = f"👻 <b>Новий {category} (анонімно)</b>\n\n"
+        user_info = f"{emoji} <b>Новий {category.upper()} (👻 АНОНІМНО)</b>\n\n"
     else:
-        user_info = f"📨 <b>Новий {category}</b> від @{username} (ID: {user_id})\n\n"
+        user_info = f"{emoji} <b>Новий {category.upper()}</b> від @{username} (ID: {user_id})\n\n"
 
     if text:
         user_info += text
