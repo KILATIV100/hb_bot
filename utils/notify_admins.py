@@ -27,11 +27,11 @@ async def notify_admins(
     if text:
         user_info += text
 
-    # Клавіатура для адмінів з кнопкою "Ответити"
+    # Клавіатура для адмінів з кнопкою "Відповісти"
     reply_kb = None
     if feedback_id and not is_anonymous:
         reply_kb = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="💬 Ответити", callback_data=f"reply_to_{feedback_id}")]
+            [InlineKeyboardButton(text="💬 Відповісти", callback_data=f"reply_to_{feedback_id}")]
         ])
 
     # Надсилаємо кожному адміну
