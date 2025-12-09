@@ -39,10 +39,10 @@ async def choose_anonymity_news(callback: CallbackQuery, state: FSMContext):
 @router.message(FeedbackStates.waiting_for_news)
 async def receive_news(message: Message, state: FSMContext):
     await state.update_data(
-        content=message.text or "Без тексту",
+        content=message.text or message.caption or "Без тексту",
         media=message.photo or message.document or message.video
     )
-    preview = message.text or "[Медіа]"
+    preview = message.text or message.caption or "[Медіа]"
     await message.answer(f"Перевірно?\n\n{preview}", reply_markup=get_confirm_kb())
     await state.set_state(FeedbackStates.confirming)
 
