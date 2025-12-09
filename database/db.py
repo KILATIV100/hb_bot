@@ -34,6 +34,15 @@ class DB:
                     last_feedback TIMESTAMP
                 )
             ''')
+            await cur.execute('''
+                CREATE TABLE IF NOT EXISTS replies (
+                    id SERIAL PRIMARY KEY,
+                    feedback_id INT REFERENCES feedbacks(id) ON DELETE CASCADE,
+                    admin_id BIGINT,
+                    reply_text TEXT,
+                    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            ''')
             await self.conn.commit()
 
     async def add_feedback(self, user_id: int, username: str, category: str, content: str) -> int:
@@ -58,6 +67,50 @@ class DB:
                 return False
         return True
 
+    async def get_stats(self, period: str) -> list:
+        """Отримати статистику за період: 'day', 'week', 'all'"""
+        async with self.conn.cursor() as cur:
+            if period == 'day':
+                query = '''
+                    SELECT category, COUNT(*) as count
+                    FROM feedbacks
+                    WHERE timestamp >= CURRENT_TIMESTAMP - INTERVAL '1 day'
+                    GROUP BY category
+                '''
+            elif period == 'week':
+                query = '''
+                    SELECT category, COUNT(*) as count
+                    FROM feedbacks
+                    WHERE timestamp >= CURRENT_TIMESTAMP - INTERVAL '7 days'
+                    GROUP BY category
+                '''
+            else:  # 'all'
+                query = '''
+                    SELECT category, COUNT(*) as count
+                    FROM feedbacks
+                    GROUP BY category
+                '''
 
-# ← ЦЕЙ РЯДОК БУВ ОБРІЗАНИЙ! ОБОВ'ЯЗКОВО МАЄ БУТИ:
+            await cur.execute(query)
+            rows = await cur.fetchall()
+            return [(row['category'], row['count']) for row in rows] if rows else []
+
+    async def get_feedback(self, feedback_id: int) -> dict | None:
+        """Отримати feedback за ID"""
+        async with self.conn.cursor() as cur:
+            await cur.execute("SELECT * FROM feedbacks WHERE id = %s", (feedback_id,))
+            return await cur.fetchone()
+
+    async def add_reply(self, feedback_id: int, admin_id: int, reply_text: str) -> int:
+        """Додати відповідь адміна"""
+        async with self.conn.cursor() as cur:
+            await cur.execute(
+                "INSERT INTO replies (feedback_id, admin_id, reply_text) VALUES (%s, %s, %s) RETURNING id",
+                (feedback_id, admin_id, reply_text)
+            )
+            reply_id = (await cur.fetchone())["id"]
+            await self.conn.commit()
+        return reply_id
+
+
 db = DB()
