@@ -68,7 +68,7 @@ async def confirm_other(callback: CallbackQuery, state: FSMContext, bot: Bot):
                                        document_file_id=document_file_id)
 
     # Потім повідомляємо адмінів з feedback_id
-    group_message_id = await notify_admins(
+    await notify_admins(
         bot=bot,
         user_id=callback.from_user.id,
         username=username,
@@ -80,10 +80,6 @@ async def confirm_other(callback: CallbackQuery, state: FSMContext, bot: Bot):
         video=data.get("media") if hasattr(data.get("media", {}), 'file_id') else None,
         is_anonymous=is_anonymous
     )
-
-    # Зберігаємо group_message_id в БД для подальших reply
-    if group_message_id:
-        await db.update_group_message_id(feedback_id, group_message_id)
 
     await callback.message.answer("Дякуємо! Повідомлення надіслано ❤️", reply_markup=get_main_menu_kb())
     await state.clear()

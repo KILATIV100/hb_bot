@@ -3,11 +3,12 @@ from aiogram import Router, F
 from aiogram.types import Message, CallbackQuery
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
-from aiogram.enums import ParseMode, ChatType
+from aiogram.enums import ParseMode
 from states.feedback_states import AdminStates
 from keyboards import get_quick_replies_kb
 from config import settings
 from database.db import db
+from utils.watermark import add_watermark_and_send
 
 admin_router = Router()
 
@@ -36,13 +37,66 @@ async def cmd_stats(message: Message):
     response = f"📊 Аналітика:\n\n📰 За день:\n{day_str}\n\n📆 За тиждень:\n{week_str}\n\n📋 За весь час:\n{all_str}"
     await message.answer(response)
 
-# ════════════════════════════════════════
-# ОБРОБНИКИ З ГРУПИ ЛОГІВ (FEEDBACK_CHAT_ID)
-# ════════════════════════════════════════
+@admin_router.message(Command('news'))
+async def cmd_news_filter(message: Message):
+    """Фільтр новин для адмінів"""
+    if message.from_user.id not in settings.ADMIN_IDS:
+        return
+
+    async with db.conn.cursor() as cur:
+        await cur.execute("SELECT id, username, content, timestamp FROM feedbacks WHERE category = 'новина' ORDER BY timestamp DESC LIMIT 20")
+        rows = await cur.fetchall()
+
+    if not rows:
+        await message.answer("📰 Немає новин")
+        return
+
+    text = "📰 <b>ОСТАННІ НОВИНИ (макс 20):</b>\n\n"
+    for row in rows:
+        text += f"ID {row['id']} | @{row['username']}\n{row['content'][:100]}...\n\n"
+    await message.answer(text)
+
+@admin_router.message(Command('ads'))
+async def cmd_ads_filter(message: Message):
+    """Фільтр реклами для адмінів"""
+    if message.from_user.id not in settings.ADMIN_IDS:
+        return
+
+    async with db.conn.cursor() as cur:
+        await cur.execute("SELECT id, username, content, timestamp FROM feedbacks WHERE category = 'реклама' ORDER BY timestamp DESC LIMIT 20")
+        rows = await cur.fetchall()
+
+    if not rows:
+        await message.answer("📢 Немає реклам")
+        return
+
+    text = "📢 <b>ОСТАННЯ РЕКЛАМА (макс 20):</b>\n\n"
+    for row in rows:
+        text += f"ID {row['id']} | @{row['username']}\n{row['content'][:100]}...\n\n"
+    await message.answer(text)
+
+@admin_router.message(Command('other'))
+async def cmd_other_filter(message: Message):
+    """Фільтр інших повідомлень для адмінів"""
+    if message.from_user.id not in settings.ADMIN_IDS:
+        return
+
+    async with db.conn.cursor() as cur:
+        await cur.execute("SELECT id, username, content, timestamp FROM feedbacks WHERE category = 'інше' ORDER BY timestamp DESC LIMIT 20")
+        rows = await cur.fetchall()
+
+    if not rows:
+        await message.answer("💬 Немає інших повідомлень")
+        return
+
+    text = "💬 <b>ІНШІ ПОВІДОМЛЕННЯ (макс 20):</b>\n\n"
+    for row in rows:
+        text += f"ID {row['id']} | @{row['username']}\n{row['content'][:100]}...\n\n"
+    await message.answer(text)
 
 @admin_router.callback_query(F.data.startswith("reply_to_"))
 async def reply_to_feedback(callback: CallbackQuery, state: FSMContext):
-    """Обробник для кнопки 'Відповісти' з групи логів"""
+    """Обробник для кнопки 'Відповісти' з приватного чату адміна"""
     if callback.from_user.id not in settings.ADMIN_IDS:
         await callback.answer("Тільки для адмінів! 🚫", show_alert=True)
         return
@@ -68,7 +122,7 @@ async def reply_to_feedback(callback: CallbackQuery, state: FSMContext):
 
 @admin_router.callback_query(F.data.startswith("publish_to_"))
 async def publish_to_channel(callback: CallbackQuery):
-    """Обробник для кнопки 'Опублікувати' з групи логів"""
+    """Обробник для кнопки 'Опублікувати' з приватного чату адміна"""
     if callback.from_user.id not in settings.ADMIN_IDS:
         await callback.answer("Тільки для адмінів! 🚫", show_alert=True)
         return
@@ -86,11 +140,12 @@ async def publish_to_channel(callback: CallbackQuery):
     try:
         # Публікуємо на основний канал з медіа (якщо є)
         if feedback.get('photo_file_id'):
-            await callback.bot.send_photo(
-                settings.CHANNEL_ID,
+            # Додаємо водяний знак до фото
+            await add_watermark_and_send(
+                callback.bot,
                 feedback['photo_file_id'],
-                caption=publish_text,
-                parse_mode=ParseMode.HTML
+                publish_text,
+                ParseMode.HTML
             )
         elif feedback.get('video_file_id'):
             await callback.bot.send_video(
@@ -149,29 +204,13 @@ async def quick_reply(callback: CallbackQuery, state: FSMContext):
     # Зберігаємо в БД
     reply_id = await db.add_reply(feedback_id, callback.from_user.id, reply_text)
 
-    # Отримуємо group_message_id для reply в групі
-    feedback = await db.get_feedback(feedback_id)
-    group_message_id = feedback.get("group_message_id") if feedback else None
-
     # Відправляємо користувачу
     try:
         await callback.bot.send_message(
             user_id,
-            f"📬 <b>Адмін відповив на твоє повідомлення!</b>\n\n{reply_text}"
+            f"📬 <b>Адмін відповив на твоє повідомлення!</b>\n\n{reply_text}",
+            parse_mode=ParseMode.HTML
         )
-
-        # Публікуємо відповідь в групі логів як reply на оригінальне повідомлення
-        if group_message_id:
-            try:
-                await callback.bot.send_message(
-                    settings.FEEDBACK_CHAT_ID,
-                    f"💬 <b>Відповідь адміна:</b>\n\n{reply_text}",
-                    reply_to_message_id=group_message_id,
-                    parse_mode=ParseMode.HTML
-                )
-            except Exception as e:
-                print(f"Не вдалося надіслати reply в групу: {e}")
-
         await callback.message.answer(f"✅ Відповідь надіслана юзеру @{username}!")
     except Exception as e:
         await callback.message.answer(f"❌ Помилка при надсиланні: {e}")
@@ -197,74 +236,15 @@ async def send_custom_reply(message: Message, state: FSMContext):
     # Зберігаємо відповідь в БД
     reply_id = await db.add_reply(feedback_id, message.from_user.id, message.text)
 
-    # Отримуємо group_message_id для reply в групі
-    feedback = await db.get_feedback(feedback_id)
-    group_message_id = feedback.get("group_message_id") if feedback else None
-
     # Відправляємо відповідь користувачу
-    try:
-        await message.bot.send_message(
-            user_id,
-            f"📬 <b>Адмін відповив на твоє повідомлення!</b>\n\n{message.text}"
-        )
-
-        # Публікуємо відповідь в групі логів як reply на оригінальне повідомлення
-        if group_message_id:
-            try:
-                await message.bot.send_message(
-                    settings.FEEDBACK_CHAT_ID,
-                    f"💬 <b>Відповідь адміна:</b>\n\n{message.text}",
-                    reply_to_message_id=group_message_id,
-                    parse_mode=ParseMode.HTML
-                )
-            except Exception as e:
-                print(f"Не вдалося надіслати reply в групу: {e}")
-
-        await message.answer(f"✅ Відповідь надіслана юзеру @{username}!")
-    except Exception as e:
-        await message.answer(f"❌ Помилка при надсиланні: {e}")
-
-    await state.clear()
-
-# ════════════════════════════════════════════════════════════════════════════
-# ПРЯМА ПЕРЕПИСКА З ГРУПИ - ОБРОБНИК ДЛЯ REPLY НА ПОВІДОМЛЕННЯ
-# ════════════════════════════════════════════════════════════════════════════
-
-@admin_router.message(F.chat.type == ChatType.SUPERGROUP, F.reply_to_message)
-async def handle_group_reply(message: Message):
-    """Обробник для reply на повідомлення в групі логів від адміна"""
-    # Перевірка, що це адмін групи
-    if message.from_user.id not in settings.ADMIN_IDS:
-        return
-
-    # Перевірка, що це саме група логів
-    if message.chat.id != settings.FEEDBACK_CHAT_ID:
-        return
-
-    # Отримуємо оригінальне повідомлення, на яке адмін відповідає
-    replied_message_id = message.reply_to_message.message_id
-
-    # Знаходимо feedback за group_message_id
-    feedback = await db.get_feedback_by_group_message_id(replied_message_id)
-
-    if not feedback:
-        await message.answer("❌ Не знайдено оригінального повідомлення в БД")
-        return
-
-    user_id = feedback["user_id"]
-    username = feedback["username"]
-    feedback_id = feedback["id"]
-
-    # Зберігаємо reply в БД
-    reply_id = await db.add_reply(feedback_id, message.from_user.id, message.text)
-
-    # Відправляємо користувачу
     try:
         await message.bot.send_message(
             user_id,
             f"📬 <b>Адмін відповив на твоє повідомлення!</b>\n\n{message.text}",
             parse_mode=ParseMode.HTML
         )
-        await message.answer("✅ Відповідь надіслана користувачу!")
+        await message.answer(f"✅ Відповідь надіслана юзеру @{username}!")
     except Exception as e:
         await message.answer(f"❌ Помилка при надсиланні: {e}")
+
+    await state.clear()

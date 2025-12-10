@@ -79,27 +79,16 @@ async def cmd_help(message: Message):
         "<b>Команди адмінів:</b>\n"
         "/stats - аналітика\n"
         "/id - твій ID\n"
-        "/testgroup - тест групи логів"
+        "/news - новини\n"
+        "/ads - реклама\n"
+        "/other - інше"
     )
     await message.answer(help_text, reply_markup=get_main_menu_kb())
 
-# Команда для перевірки групи (тільки адміни)
-@router.message(Command("testgroup"))
-async def test_group(message: Message):
-    if message.from_user.id not in settings.ADMIN_IDS:
-        await message.answer("Тільки для адмінів!")
-        return
-    try:
-        await message.bot.send_message(
-            settings.FEEDBACK_CHAT_ID,
-            "Тестове повідомлення від бота \nЯкщо бачиш це — ID правильний!"
-        )
-        await message.answer("Повідомлення успішно надіслано в групу логів!")
-    except Exception as e:
-        await message.answer(f"Помилка: {e}\nПеревір FEEDBACK_CHAT_ID")
-
 # Обробник для прямих текстових повідомлень (без меню)
-@router.message(F.text)
+@router.message(F.text,
+               ~F.text.in_(["📰 Надіслати новину", "📢 Запит про рекламу", "💬 Інше повідомлення",
+                           "ℹ️ Про бот", "❓ Допомога", "меню", "головне меню", "назад"]))
 async def handle_direct_message(message: Message, bot: Bot):
     """Ловить звичайні текстові повідомлення, написані прямо в боті"""
     if not await db.check_rate_limit(message.from_user.id):
@@ -111,8 +100,8 @@ async def handle_direct_message(message: Message, bot: Bot):
     # Додаємо feedback як "інше"
     feedback_id = await db.add_feedback(message.from_user.id, username, "інше", message.text)
 
-    # Відправляємо в групу логів
-    group_message_id = await notify_admins(
+    # Відправляємо адмінам
+    await notify_admins(
         bot=bot,
         user_id=message.from_user.id,
         username=username,
@@ -121,9 +110,5 @@ async def handle_direct_message(message: Message, bot: Bot):
         text=message.text,
         is_anonymous=False
     )
-
-    # Зберігаємо group_message_id
-    if group_message_id:
-        await db.update_group_message_id(feedback_id, group_message_id)
 
     await message.answer("✅ Твоє повідомлення отримано! Дякуємо за участь ❤️", reply_markup=get_main_menu_kb())
