@@ -3,7 +3,7 @@ from aiogram import Router, F, Bot
 from aiogram.types import Message
 from aiogram.filters import CommandStart, Command
 from aiogram.fsm.context import FSMContext
-from keyboards import get_main_menu_kb
+from keyboards import get_main_menu_kb, get_start_kb
 from config import settings
 from database.db import db
 from utils.notify_admins import notify_admins
@@ -15,13 +15,17 @@ async def cmd_start(message: Message):
     welcome_text = (
         "👋 Привіт!\n\n"
         "Це офіційний бот XBrovary зворотного зв'язку 📰\n\n"
-        "З його допомогою ти можеш:\n"
-        "• 📰 Надіслати цікаву новину\n"
-        "• 📢 Запропонувати рекламне спілкування\n"
-        "• 💬 Задати питання або поділитися ідеєю\n\n"
-        "Що далі?"
+        "Натисни СТАРТ щоб почати!"
     )
-    await message.answer(welcome_text, reply_markup=get_main_menu_kb())
+    await message.answer(welcome_text, reply_markup=get_start_kb())
+
+@router.message(F.text == "▶️ СТАРТ")
+async def cmd_menu(message: Message):
+    menu_text = (
+        "📋 <b>ГОЛОВНЕ МЕНЮ</b>\n\n"
+        "Обери дію:"
+    )
+    await message.answer(menu_text, reply_markup=get_main_menu_kb())
 
 @router.message(Command("id"))
 async def cmd_id(message: Message):
@@ -37,11 +41,11 @@ async def back_to_menu(message: Message):
 async def cmd_about(message: Message):
     about_text = (
         "ℹ️ <b>Про бот</b>\n\n"
-        "Це модерний бот зворотного зв'язку, розроблений Адміном каналу для збору:\n"
+        "Це модерний бот зворотного зв'язку для збору:\n"
         "✓ Новин від спільноти\n"
         "✓ Рекламних пропозицій\n"
         "✓ Пропозицій та критики\n\n"
-        "Бот закономірно логує всі повідомлення для аналізу та якісного контролю."
+        "Всі повідомлення логуються для аналізу та якісного контролю."
     )
     await message.answer(about_text, reply_markup=get_main_menu_kb())
 
@@ -88,7 +92,7 @@ async def cmd_help(message: Message):
 # Обробник для прямих текстових повідомлень (без меню)
 @router.message(F.text,
                ~F.text.in_(["📰 Надіслати новину", "📢 Запит про рекламу", "💬 Інше повідомлення",
-                           "ℹ️ Про бот", "❓ Допомога", "меню", "головне меню", "назад"]))
+                           "ℹ️ Про бот", "❓ Допомога", "меню", "головне меню", "назад", "▶️ СТАРТ"]))
 async def handle_direct_message(message: Message, bot: Bot):
     """Ловить звичайні текстові повідомлення, написані прямо в боті"""
     if not await db.check_rate_limit(message.from_user.id):

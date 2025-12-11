@@ -1,5 +1,17 @@
-# keyboards.py — ФІНАЛЬНА РОБОЧА ВЕРСІЯ 2025
+# keyboards.py — ФІНАЛЬНА ВЕРСІЯ 2025
 from aiogram.types import ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton
+
+
+def get_start_kb() -> ReplyKeyboardMarkup:
+    """Клавіатура для першого запуску"""
+    kb = ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text="▶️ СТАРТ")]
+        ],
+        resize_keyboard=True,
+        one_time_keyboard=True
+    )
+    return kb
 
 
 def get_main_menu_kb() -> ReplyKeyboardMarkup:
@@ -20,20 +32,6 @@ def get_confirm_kb() -> InlineKeyboardMarkup:
         [
             InlineKeyboardButton(text="Відправити", callback_data="confirm_send"),
             InlineKeyboardButton(text="Скасувати", callback_data="cancel_send")
-        ]
-    ])
-    return kb
-
-
-def get_anonymity_kb(feedback_type: str = "news") -> InlineKeyboardMarkup:
-    """Клавіатура для вибору способу відправки"""
-    kb = InlineKeyboardMarkup(inline_keyboard=[
-        [
-            InlineKeyboardButton(text="👤 Підписано", callback_data=f"anonymous_no_{feedback_type}"),
-            InlineKeyboardButton(text="👻 Анонімно", callback_data=f"anonymous_yes_{feedback_type}")
-        ],
-        [
-            InlineKeyboardButton(text="❌ Скасувати", callback_data="cancel_send")
         ]
     ])
     return kb
