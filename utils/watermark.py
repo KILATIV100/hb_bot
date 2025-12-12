@@ -1,4 +1,3 @@
-# utils/watermark.py
 import io
 import os
 import asyncio
@@ -12,6 +11,10 @@ if not hasattr(Image, 'ANTIALIAS'):
 from aiogram import Bot
 from aiogram.types import BufferedInputFile, FSInputFile
 from config import settings
+
+# 🔥 СЕМАФОР: Дозволяє тільки 1 активну обробку відео одночасно
+# Це захистить сервер від перевантаження CPU/RAM
+video_processing_semaphore = asyncio.Semaphore(1)
 
 # Шляхи до файлів
 BASE_DIR = os.path.dirname(os.path.dirname(__file__))
@@ -46,7 +49,6 @@ def overlay_logo_on_image(image: Image.Image) -> Image.Image:
             alpha = alpha.point(lambda p: int(p * 0.7)) 
             logo.putalpha(alpha)
 
-        # Конвертуємо основне зображення в RGBA
         if image.mode != "RGBA":
             image = image.convert("RGBA")
 
@@ -105,31 +107,27 @@ def process_video_sync(input_path: str, output_path: str, logo_path: str):
         video = VideoFileClip(input_path)
         
         if os.path.exists(logo_path):
-            # Базовий кліп логотипу
             base_logo = (ImageClip(logo_path)
                     .set_duration(video.duration)
                     .resize(width=video.w * 0.40)  # 40% ширини
                     .set_opacity(0.7))
             
-            # Розрахунок координат
             W, H = video.size
             w, h = base_logo.size
             padding = int(W * 0.05) # Відступ 5%
 
-            # Позиції для MoviePy
-            # set_position повертає копію кліпу з новою позицією
+            # Позиції
             logo_center = base_logo.set_position(("center", "center"))
             logo_tl = base_logo.set_position((padding, padding))
             logo_tr = base_logo.set_position((W - w - padding, padding))
             logo_bl = base_logo.set_position((padding, H - h - padding))
             logo_br = base_logo.set_position((W - w - padding, H - h - padding))
 
-            # Компонуємо все разом
             final = CompositeVideoClip([video, logo_center, logo_tl, logo_tr, logo_bl, logo_br])
         else:
             final = video
 
-        # Рендерінг
+        # Рендерінг (4 потоки для прискорення)
         final.write_videofile(
             output_path, 
             codec="libx264", 
@@ -151,42 +149,47 @@ def process_video_sync(input_path: str, output_path: str, logo_path: str):
 
 
 async def add_video_watermark_and_send(bot: Bot, file_id: str, caption: str, parse_mode: str = "HTML") -> None:
-    """Для відео: Завантажує, обробляє через moviepy і відправляє"""
-    input_path = os.path.join(TEMP_DIR, f"{file_id}_in.mp4")
-    output_path = os.path.join(TEMP_DIR, f"{file_id}_out.mp4")
-
-    try:
-        # 1. Завантажуємо відео
-        file = await bot.get_file(file_id)
-        await bot.download_file(file.file_path, destination=input_path)
-
-        # 2. Перевіряємо наявність логотипу
-        if not os.path.exists(LOGO_PNG_PATH):
-            print("⚠️ Немає логотипу, відправляємо оригінал")
-            await bot.send_video(settings.CHANNEL_ID, video=file_id, caption=caption, parse_mode=parse_mode)
-            return
-
-        # 3. Обробляємо відео
-        print(f"🎬 Обробка відео {file_id} (5 логотипів)...")
-        await asyncio.to_thread(process_video_sync, input_path, output_path, LOGO_PNG_PATH)
-        print("✅ Обробка завершена успішно")
-
-        # 4. Відправляємо результат
-        if os.path.exists(output_path):
-            video_file = FSInputFile(output_path)
-            await bot.send_video(settings.CHANNEL_ID, video=video_file, caption=caption, parse_mode=parse_mode)
-        else:
-            raise Exception("Файл результату не створено")
-
-    except Exception as e:
-        print(f"❌ Помилка відео-вотермарки: {e}")
-        await bot.send_video(settings.CHANNEL_ID, video=file_id, caption=caption, parse_mode=parse_mode)
+    """Для відео: Завантажує, обробляє через moviepy і відправляє (БЕЗПЕЧНО ЧЕРЕЗ СЕМАФОР)"""
     
-    finally:
-        await asyncio.sleep(1)
-        if os.path.exists(input_path):
-            try: os.remove(input_path)
-            except: pass
-        if os.path.exists(output_path):
-            try: os.remove(output_path)
-            except: pass
+    # 🔥 Перевірка черги
+    if video_processing_semaphore.locked():
+        print(f"⏳ Відео {file_id} чекає в черзі на обробку...")
+
+    async with video_processing_semaphore: # Блокуємо слот
+        input_path = os.path.join(TEMP_DIR, f"{file_id}_in.mp4")
+        output_path = os.path.join(TEMP_DIR, f"{file_id}_out.mp4")
+
+        try:
+            # 1. Завантажуємо відео
+            file = await bot.get_file(file_id)
+            await bot.download_file(file.file_path, destination=input_path)
+
+            if not os.path.exists(LOGO_PNG_PATH):
+                print("⚠️ Немає логотипу, відправляємо оригінал")
+                await bot.send_video(settings.CHANNEL_ID, video=file_id, caption=caption, parse_mode=parse_mode)
+                return
+
+            print(f"🎬 Обробка відео {file_id} (5 логотипів)...")
+            await asyncio.to_thread(process_video_sync, input_path, output_path, LOGO_PNG_PATH)
+            print("✅ Обробка завершена успішно")
+
+            # 4. Відправляємо результат
+            if os.path.exists(output_path):
+                video_file = FSInputFile(output_path)
+                await bot.send_video(settings.CHANNEL_ID, video=video_file, caption=caption, parse_mode=parse_mode)
+            else:
+                raise Exception("Файл результату не створено")
+
+        except Exception as e:
+            print(f"❌ Помилка відео-вотермарки: {e}")
+            await bot.send_video(settings.CHANNEL_ID, video=file_id, caption=caption, parse_mode=parse_mode)
+        
+        finally:
+            await asyncio.sleep(1)
+            # Видаляємо файли
+            if os.path.exists(input_path):
+                try: os.remove(input_path)
+                except: pass
+            if os.path.exists(output_path):
+                try: os.remove(output_path)
+                except: pass
