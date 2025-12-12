@@ -55,11 +55,11 @@ def overlay_logo_on_image(image: Image.Image) -> Image.Image:
         if image.mode != "RGBA":
             image = image.convert("RGBA")
 
-        # Визначаємо позицію (нижній правий кут з відступом)
-        x = image.width - logo_width - 15
-        y = image.height - logo_height - 15
+        # Визначаємо позицію (центр зображення)
+        x = (image.width - logo_width) // 2
+        y = (image.height - logo_height) // 2
 
-        # Накладаємо логотип
+        # Накладаємо логотип в центрі
         image.paste(logo, (x, y), logo)
 
         return image

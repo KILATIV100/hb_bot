@@ -121,7 +121,7 @@ async def reply_to_feedback(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
 
 @admin_router.callback_query(F.data.startswith("publish_to_"))
-async def publish_to_channel(callback: CallbackQuery):
+async def publish_to_channel(callback: CallbackQuery, state: FSMContext):
     """Обробник для кнопки 'Опублікувати' з приватного чату адміна"""
     if callback.from_user.id not in settings.ADMIN_IDS:
         await callback.answer("Тільки для адмінів! 🚫", show_alert=True)
@@ -134,19 +134,83 @@ async def publish_to_channel(callback: CallbackQuery):
         await callback.answer("Feedback не знайдено!", show_alert=True)
         return
 
+    # Якщо є фото - запитуємо про водяний знак
+    if feedback.get('photo_file_id'):
+        from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+
+        watermark_kb = InlineKeyboardMarkup(inline_keyboard=[
+            [
+                InlineKeyboardButton(text="✅ З вотермаркою", callback_data=f"publish_with_wm_{feedback_id}"),
+                InlineKeyboardButton(text="❌ Без вотермарки", callback_data=f"publish_no_wm_{feedback_id}")
+            ]
+        ])
+
+        await callback.message.answer("🎨 Додати логотип XBrovary на фото?", reply_markup=watermark_kb)
+        await callback.answer()
+        return
+
+    # Якщо немає фото - публікуємо одразу
+    await do_publish_feedback(callback, feedback_id, feedback, use_watermark=False)
+
+
+@admin_router.callback_query(F.data.startswith("publish_with_wm_"))
+async def publish_with_watermark(callback: CallbackQuery):
+    """Публікує з вотермаркою"""
+    if callback.from_user.id not in settings.ADMIN_IDS:
+        await callback.answer("Тільки для адмінів! 🚫", show_alert=True)
+        return
+
+    feedback_id = int(callback.data.replace("publish_with_wm_", ""))
+    feedback = await db.get_feedback(feedback_id)
+
+    if not feedback:
+        await callback.answer("Feedback не знайдено!", show_alert=True)
+        return
+
+    await do_publish_feedback(callback, feedback_id, feedback, use_watermark=True)
+
+
+@admin_router.callback_query(F.data.startswith("publish_no_wm_"))
+async def publish_without_watermark(callback: CallbackQuery):
+    """Публікує без вотермарки"""
+    if callback.from_user.id not in settings.ADMIN_IDS:
+        await callback.answer("Тільки для адмінів! 🚫", show_alert=True)
+        return
+
+    feedback_id = int(callback.data.replace("publish_no_wm_", ""))
+    feedback = await db.get_feedback(feedback_id)
+
+    if not feedback:
+        await callback.answer("Feedback не знайдено!", show_alert=True)
+        return
+
+    await do_publish_feedback(callback, feedback_id, feedback, use_watermark=False)
+
+
+async def do_publish_feedback(callback: CallbackQuery, feedback_id: int, feedback: dict, use_watermark: bool):
+    """Виконує публікацію з або без вотермарки"""
     # Формуємо текст для публікації з префіксом #нампишуть
     publish_text = f"#нампишуть\n\n{feedback['content']}"
 
     try:
         # Публікуємо на основний канал з медіа (якщо є)
         if feedback.get('photo_file_id'):
-            # Додаємо водяний знак до фото
-            await add_watermark_and_send(
-                callback.bot,
-                feedback['photo_file_id'],
-                publish_text,
-                ParseMode.HTML
-            )
+            if use_watermark:
+                # Додаємо водяний знак до фото
+                await add_watermark_and_send(
+                    callback.bot,
+                    feedback['photo_file_id'],
+                    publish_text,
+                    ParseMode.HTML
+                )
+            else:
+                # Публікуємо без вотермарки
+                await callback.bot.send_photo(
+                    settings.CHANNEL_ID,
+                    feedback['photo_file_id'],
+                    caption=publish_text,
+                    parse_mode=ParseMode.HTML
+                )
         elif feedback.get('video_file_id'):
             await callback.bot.send_video(
                 settings.CHANNEL_ID,
