@@ -45,6 +45,9 @@ def create_pattern_layer(base_width: int, base_height: int) -> Image.Image:
         
         logo = logo.resize((target_w, target_h), Image.Resampling.LANCZOS)
         
+        # Поворот -30 градусів
+        logo = logo.rotate(30, expand=True, resample=Image.Resampling.BICUBIC)
+        
         # Прозорість: 0.7 (70%)
         r, g, b, alpha = logo.split()
         alpha = ImageEnhance.Brightness(alpha).enhance(0.7)
