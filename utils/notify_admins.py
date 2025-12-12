@@ -1,7 +1,7 @@
 # utils/notify_admins.py
 import html
 from aiogram import Bot
-from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, InputMediaPhoto, InputMediaVideo
 from aiogram.enums import ParseMode
 from config import settings
 
@@ -13,39 +13,36 @@ async def notify_admins(
     category: str,
     feedback_id: int | None = None,
     text: str | None = None,
-    photo=None,
-    document=None,
-    video=None,
+    media_files: list | None = None,  # 🔥 ЦЕЙ АРГУМЕНТ ОБОВ'ЯЗКОВИЙ
     is_anonymous: bool = False,
 ) -> None:
-    """Надсилає повідомлення всім адмінам в приватні чати з кнопками (БЕЗПЕЧНА ВЕРСІЯ)"""
+    """
+    Надсилає повідомлення адмінам.
+    Якщо медіа одне - кнопки кріпляться до нього.
+    Якщо це альбом - спочатку йде альбом, потім текст із кнопками.
+    """
     username = username or "Без юзернейму"
-
-    # Очищуємо категорію
     clean_category = category.strip().lower() if category else "інше"
 
-    # Категорія з емодзі
     category_labels = {
         "новина": ("📰", "Нова НОВИНА"),
         "реклама": ("📢", "Новий запит на РЕКЛАМУ"),
         "інше": ("💬", "Нове повідомлення")
     }
-    
     emoji, label = category_labels.get(clean_category, ("📨", "Новий ЗАПИТ"))
 
-    # 🔥 БЕЗПЕКА: Використовуємо html.escape замість неіснуючого html.quote
     safe_username = html.escape(username)
-    safe_text = html.escape(text) if text else None
+    safe_text = html.escape(text) if text else "Без тексту"
 
+    # Формуємо заголовок
     if is_anonymous:
-        user_info = f"{emoji} <b>{label} (👻 АНОНІМНО)</b>\n\n"
+        header = f"{emoji} <b>{label} (👻 АНОНІМНО)</b>\n"
     else:
-        user_info = f"{emoji} <b>{label}</b> від @{safe_username} (ID: {user_id})\n\n"
+        header = f"{emoji} <b>{label}</b> від @{safe_username} (ID: {user_id})\n"
+    
+    full_text = f"{header}\n📝 {safe_text}"
 
-    if safe_text:
-        user_info += safe_text
-
-    # Клавіатура дій
+    # Клавіатура
     admin_kb = None
     if feedback_id and not is_anonymous:
         admin_kb = InlineKeyboardMarkup(inline_keyboard=[
@@ -55,24 +52,44 @@ async def notify_admins(
             ]
         ])
 
-    # Розсилка адмінам
+    # Розсилка кожному адміну
     for admin_id in settings.ADMIN_IDS:
         try:
-            if photo:
-                # Беремо останнє фото (найкраща якість), якщо це список
-                photo_obj = photo[-1].file_id if isinstance(photo, list) else photo
-                await bot.send_photo(admin_id, photo_obj, caption=user_info,
-                                   parse_mode=ParseMode.HTML, reply_markup=admin_kb)
-            elif document:
-                doc_obj = document.file_id if hasattr(document, 'file_id') else document
-                await bot.send_document(admin_id, doc_obj, caption=user_info,
-                                      parse_mode=ParseMode.HTML, reply_markup=admin_kb)
-            elif video:
-                vid_obj = video.file_id if hasattr(video, 'file_id') else video
-                await bot.send_video(admin_id, vid_obj, caption=user_info,
-                                   parse_mode=ParseMode.HTML, reply_markup=admin_kb)
-            else:
-                await bot.send_message(admin_id, user_info, reply_markup=admin_kb,
-                                     parse_mode=ParseMode.HTML)
+            # Сценарій 1: Немає медіа (тільки текст)
+            if not media_files:
+                await bot.send_message(admin_id, full_text, parse_mode=ParseMode.HTML, reply_markup=admin_kb)
+                continue
+
+            # Сценарій 2: Один файл (Фото/Відео/Документ)
+            if len(media_files) == 1:
+                file_data = media_files[0]
+                file_id = file_data['file_id']
+                file_type = file_data['type']
+
+                if file_type == 'photo':
+                    await bot.send_photo(admin_id, file_id, caption=full_text, parse_mode=ParseMode.HTML, reply_markup=admin_kb)
+                elif file_type == 'video':
+                    await bot.send_video(admin_id, file_id, caption=full_text, parse_mode=ParseMode.HTML, reply_markup=admin_kb)
+                elif file_type == 'document':
+                    await bot.send_document(admin_id, file_id, caption=full_text, parse_mode=ParseMode.HTML, reply_markup=admin_kb)
+                continue
+
+            # Сценарій 3: АЛЬБОМ (> 1 файлу)
+            # 1. Формуємо медіа-групу
+            media_group = []
+            for m in media_files:
+                if m['type'] == 'photo':
+                    media_group.append(InputMediaPhoto(media=m['file_id']))
+                elif m['type'] == 'video':
+                    media_group.append(InputMediaVideo(media=m['file_id']))
+            
+            if media_group:
+                # Відправляємо альбом (без кнопок)
+                await bot.send_media_group(admin_id, media=media_group)
+            
+            # 2. Відправляємо окреме повідомлення з текстом і кнопками
+            control_msg = f"{header}\n⚠️ <b>Отримано альбом ({len(media_files)} файлів).</b>\nТекст новини:\n\n{safe_text}"
+            await bot.send_message(admin_id, control_msg, parse_mode=ParseMode.HTML, reply_markup=admin_kb)
+
         except Exception as e:
-            print(f"Не вдалося надіслати адміну {admin_id}: {e}")
+            print(f"❌ Не вдалося надіслати адміну {admin_id}: {e}")
