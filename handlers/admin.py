@@ -21,18 +21,16 @@ QUICK_REPLIES = {
     "quick_reply_clarify": "❓ Дякуємо. Просимо уточнити джерело/деталі/спосіб звʼязку.",
 }
 
-# --- 🔥 НОВИЙ ФУНКЦІОНАЛ: ВІДПОВІДЬ СВАЙПОМ ---
+# --- 🔥 ВІДПОВІДЬ СВАЙПОМ ---
 @admin_router.message(F.reply_to_message & F.from_user.id.in_(settings.ADMIN_IDS))
 async def admin_reply_by_swipe(message: Message):
     """
-    Дозволяє адміну відповісти користувачеві просто свайпнувши повідомлення бота.
-    Працює, витягуючи ID користувача з тексту оригінального повідомлення.
+    Дозволяє адміну відповісти користувачеві свайпом.
     """
-    # 1. Отримуємо текст повідомлення, на яке відповів адмін
     replied_msg = message.reply_to_message
     origin_text = replied_msg.text or replied_msg.caption or ""
 
-    # 2. Шукаємо патерн "(ID: 123456789)"
+    # Шукаємо ID
     match = re.search(r"\(ID:\s*(\d+)\)", origin_text)
     
     if not match:
@@ -40,7 +38,6 @@ async def admin_reply_by_swipe(message: Message):
 
     target_user_id = int(match.group(1))
     
-    # 3. Відправляємо відповідь користувачеві
     try:
         await message.bot.send_message(
             target_user_id, 
@@ -49,7 +46,6 @@ async def admin_reply_by_swipe(message: Message):
         )
         await message.answer(f"✅ Відповідь надіслана користувачу (ID: {target_user_id})!")
 
-        # 4. Логуємо в базу даних
         last_feedback_id = await db.get_last_feedback_id(target_user_id)
         if last_feedback_id:
             await db.add_reply(last_feedback_id, message.from_user.id, message.text)
@@ -57,13 +53,11 @@ async def admin_reply_by_swipe(message: Message):
     except Exception as e:
         await message.answer(f"❌ Не вдалося надіслати відповідь: {e}")
 
-# --- КІНЕЦЬ НОВОГО ФУНКЦІОНАЛУ ---
+# --- АДМІНСЬКІ КОМАНДИ ---
 
 @admin_router.message(Command('stats'))
 async def cmd_stats(message: Message):
-    if message.from_user.id not in settings.ADMIN_IDS:
-        await message.answer("Тільки для адмінів! 🚫")
-        return
+    if message.from_user.id not in settings.ADMIN_IDS: return
 
     stats_day = await db.get_stats('day')
     stats_week = await db.get_stats('week')
@@ -123,6 +117,8 @@ async def cmd_other_filter(message: Message):
     for row in rows:
         text += f"ID {row['id']} | @{row['username']}\n{row['content'][:100]}...\n\n"
     await message.answer(text)
+
+# --- CALLBACKS ---
 
 @admin_router.callback_query(F.data.startswith("reply_to_"))
 async def reply_to_feedback(callback: CallbackQuery, state: FSMContext):
@@ -249,3 +245,15 @@ async def send_custom_reply(message: Message, state: FSMContext):
     except Exception as e:
         await message.answer(f"❌ Помилка: {e}")
     await state.clear()
+
+# --- ⛔️ БЛОКУВАННЯ СПАМУ ВІД АДМІНІВ ⛔️ ---
+# Цей хендлер стоїть останнім і ловить ВСЕ від адмінів, що не обробилось вище
+# Тобто: якщо це не команда, не свайп, не натискання кнопки -> просто ігноруємо
+@admin_router.message(F.from_user.id.in_(settings.ADMIN_IDS))
+async def admin_prevent_spam(message: Message):
+    """
+    Пастка для повідомлень адміна, щоб вони не потрапляли в базу як 'feedback'.
+    """
+    # Ми нічого не робимо (pass), але оскільки хендлер спрацював,
+    # повідомлення не піде далі до користувацьких хендлерів.
+    pass
