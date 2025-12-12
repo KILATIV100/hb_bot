@@ -4,7 +4,6 @@ import os
 import asyncio
 from PIL import Image
 
-# ФІКС ДЛЯ MOVIEPY + PILLOW
 if not hasattr(Image, 'ANTIALIAS'):
     Image.ANTIALIAS = Image.Resampling.LANCZOS
 
@@ -22,7 +21,6 @@ if not os.path.exists(TEMP_DIR):
     os.makedirs(TEMP_DIR)
 
 def overlay_logo_on_image(image: Image.Image) -> Image.Image:
-    """Накладає 5 логотипів на зображення"""
     try:
         if not os.path.exists(LOGO_PNG_PATH): return image
         logo = Image.open(LOGO_PNG_PATH).convert("RGBA")
@@ -60,7 +58,6 @@ def overlay_logo_on_image(image: Image.Image) -> Image.Image:
         return image
 
 def process_video_sync(input_path: str, output_path: str, logo_path: str):
-    """Обробка відео через MoviePy"""
     from moviepy.editor import VideoFileClip, ImageClip, CompositeVideoClip
     video = None
     final = None
@@ -96,18 +93,15 @@ def process_video_sync(input_path: str, output_path: str, logo_path: str):
 
 async def process_media_for_album(bot: Bot, file_id: str, file_type: str, use_watermark: bool = True):
     """
-    🔥 Готує об'єкт InputMedia для альбому (з вотермаркою або без)
-    Повертає: InputMediaPhoto або InputMediaVideo
+    Готує об'єкт InputMedia для альбому (з вотермаркою або без)
     """
     try:
-        # 1. Якщо це ФОТО
         if file_type == 'photo':
             if use_watermark:
                 file = await bot.get_file(file_id)
                 file_data = await bot.download_file(file.file_path)
                 image = Image.open(io.BytesIO(file_data.read()))
                 
-                # Накладаємо лого
                 processed_img = overlay_logo_on_image(image)
                 
                 output = io.BytesIO()
@@ -119,7 +113,6 @@ async def process_media_for_album(bot: Bot, file_id: str, file_type: str, use_wa
             else:
                 return InputMediaPhoto(media=file_id)
 
-        # 2. Якщо це ВІДЕО
         elif file_type == 'video':
             if use_watermark:
                 async with video_processing_semaphore:
@@ -132,7 +125,6 @@ async def process_media_for_album(bot: Bot, file_id: str, file_type: str, use_wa
                     if os.path.exists(LOGO_PNG_PATH):
                         await asyncio.to_thread(process_video_sync, input_path, output_path, LOGO_PNG_PATH)
                         video_file = FSInputFile(output_path)
-                        # Важливо: MoviePy файли треба читати, FSInputFile це робить
                         return InputMediaVideo(media=video_file)
                     else:
                         return InputMediaVideo(media=file_id)
@@ -141,6 +133,5 @@ async def process_media_for_album(bot: Bot, file_id: str, file_type: str, use_wa
                 
     except Exception as e:
         print(f"❌ Error processing media {file_id}: {e}")
-        # Фолбек - повертаємо оригінал
         if file_type == 'photo': return InputMediaPhoto(media=file_id)
         return InputMediaVideo(media=file_id)
