@@ -62,34 +62,19 @@ async def confirm_other(callback: CallbackQuery, state: FSMContext, bot: Bot):
     media_files = data.get("media_files", [])
 
     feedback_id = await db.add_feedback(callback.from_user.id, username, "інше", content)
-
     for m in media_files:
         await db.add_media(feedback_id, m['file_id'], m['type'])
 
-    first_file_id = media_files[0]['file_id'] if media_files else None
-    photo_obj = None
-    video_obj = None
-    doc_obj = None
-    
-    if media_files:
-        if media_files[0]['type'] == 'photo': photo_obj = first_file_id
-        elif media_files[0]['type'] == 'video': video_obj = first_file_id
-        elif media_files[0]['type'] == 'document': doc_obj = first_file_id
-
-    admin_text = content
-    if len(media_files) > 1:
-        admin_text = f"[АЛЬБОМ: {len(media_files)} файлів]\n" + admin_text
-
+    # 🔥 Оновлений виклик
     await notify_admins(
         bot=bot,
         user_id=callback.from_user.id,
         username=username,
         category="інше",
         feedback_id=feedback_id,
-        text=admin_text,
-        photo=photo_obj,
-        video=video_obj,
-        document=doc_obj
+        text=content,
+        media_files=media_files,
+        is_anonymous=False
     )
 
     await callback.message.answer("Дякуємо! Повідомлення надіслано ❤️", reply_markup=get_main_menu_kb())
