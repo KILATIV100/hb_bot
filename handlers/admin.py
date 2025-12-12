@@ -1,4 +1,5 @@
 # handlers/admin.py
+import re
 from aiogram import Router, F
 from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.filters import Command
@@ -12,13 +13,39 @@ from utils.watermark import process_media_for_album
 
 admin_router = Router()
 
-# Словник з готовими відповідями (УКРАЇНСЬКА МОВА)
 QUICK_REPLIES = {
     "quick_reply_published": "✅ Супер! Ваша новина вже опублікована на каналі. Дякуємо!",
     "quick_reply_review": "⏳ Ваше повідомлення отримано. Адміністратори розглядають його.",
     "quick_reply_rejected": "❌ Дякуємо за ваш час, але новина не відповідає критеріям нашого каналу.",
     "quick_reply_clarify": "❓ Дякуємо. Просимо уточнити деталі або джерело інформації.",
 }
+
+@admin_router.message(F.reply_to_message & F.from_user.id.in_(settings.ADMIN_IDS))
+async def admin_reply_by_swipe(message: Message):
+    replied_msg = message.reply_to_message
+    origin_text = replied_msg.text or replied_msg.caption or ""
+
+    match = re.search(r"\(ID:\s*(\d+)\)", origin_text)
+    
+    if not match:
+        return
+
+    target_user_id = int(match.group(1))
+    
+    try:
+        await message.bot.send_message(
+            target_user_id, 
+            f"📬 <b>Відповідь від адміністратора:</b>\n\n{message.text}", 
+            parse_mode=ParseMode.HTML
+        )
+        await message.answer(f"✅ Відповідь надіслана користувачу (ID: {target_user_id})!")
+
+        last_feedback_id = await db.get_last_feedback_id(target_user_id)
+        if last_feedback_id:
+            await db.add_reply(last_feedback_id, message.from_user.id, message.text)
+
+    except Exception as e:
+        await message.answer(f"❌ Не вдалося надіслати відповідь: {e}")
 
 @admin_router.message(Command('stats'))
 async def cmd_stats(message: Message):
@@ -28,11 +55,16 @@ async def cmd_stats(message: Message):
     stats_week = await db.get_stats('week')
     stats_all = await db.get_stats('all')
 
-    day_str = "\n".join([f"{cat}: {count}" for cat, count in stats_day]) if stats_day else "Нема"
-    week_str = "\n".join([f"{cat}: {count}" for cat, count in stats_week]) if stats_week else "Нема"
-    all_str = "\n".join([f"{cat}: {count}" for cat, count in stats_all]) if stats_all else "Нема"
+    day_str = "\n".join([f"{cat}: {count}" for cat, count in stats_day]) if stats_day else "Нема даних"
+    week_str = "\n".join([f"{cat}: {count}" for cat, count in stats_week]) if stats_week else "Нема даних"
+    all_str = "\n".join([f"{cat}: {count}" for cat, count in stats_all]) if stats_all else "Нема даних"
 
-    response = f"📊 **Статистика бота:**\n\n📅 **За сьогодні:**\n{day_str}\n\n🗓 **За тиждень:**\n{week_str}\n\n📈 **За весь час:**\n{all_str}"
+    response = (
+        f"📊 Статистика бота:\n\n"
+        f"📅 За сьогодні:\n{day_str}\n\n"
+        f"🗓 За тиждень:\n{week_str}\n\n"
+        f"📈 За весь час:\n{all_str}"
+    )
     await message.answer(response, parse_mode=ParseMode.MARKDOWN)
 
 @admin_router.message(Command('news'))
@@ -42,8 +74,9 @@ async def cmd_news_filter(message: Message):
         await cur.execute("SELECT id, username, content, timestamp FROM feedbacks WHERE category = 'новина' ORDER BY timestamp DESC LIMIT 20")
         rows = await cur.fetchall()
     if not rows: await message.answer("📰 Немає новин"); return
+    
     text = "📰 <b>ОСТАННІ НОВИНИ (20):</b>\n\n"
-    for row in rows: text += f"ID {row['id']} | @{row['username']}\n{row['content'][:100]}...\n\n"
+    for row in rows: text += f"🆔 {row['id']} | 👤 @{row['username']}\n📝 {row['content'][:100]}...\n\n"
     await message.answer(text)
 
 @admin_router.message(Command('ads'))
@@ -53,8 +86,9 @@ async def cmd_ads_filter(message: Message):
         await cur.execute("SELECT id, username, content, timestamp FROM feedbacks WHERE category = 'реклама' ORDER BY timestamp DESC LIMIT 20")
         rows = await cur.fetchall()
     if not rows: await message.answer("📢 Немає реклами"); return
+    
     text = "📢 <b>ОСТАННЯ РЕКЛАМА (20):</b>\n\n"
-    for row in rows: text += f"ID {row['id']} | @{row['username']}\n{row['content'][:100]}...\n\n"
+    for row in rows: text += f"🆔 {row['id']} | 👤 @{row['username']}\n📝 {row['content'][:100]}...\n\n"
     await message.answer(text)
 
 @admin_router.message(Command('other'))
@@ -64,8 +98,9 @@ async def cmd_other_filter(message: Message):
         await cur.execute("SELECT id, username, content, timestamp FROM feedbacks WHERE category = 'інше' ORDER BY timestamp DESC LIMIT 20")
         rows = await cur.fetchall()
     if not rows: await message.answer("💬 Немає повідомлень"); return
+    
     text = "💬 <b>ІНШІ ПОВІДОМЛЕННЯ (20):</b>\n\n"
-    for row in rows: text += f"ID {row['id']} | @{row['username']}\n{row['content'][:100]}...\n\n"
+    for row in rows: text += f"🆔 {row['id']} | 👤 @{row['username']}\n📝 {row['content'][:100]}...\n\n"
     await message.answer(text)
 
 @admin_router.callback_query(F.data.startswith("reply_to_"))
@@ -90,6 +125,60 @@ async def reply_to_feedback(callback: CallbackQuery, state: FSMContext):
         reply_markup=get_quick_replies_kb()
     )
     await callback.answer()
+
+@admin_router.callback_query(F.data.startswith("quick_reply_"))
+async def quick_reply(callback: CallbackQuery, state: FSMContext):
+    if callback.from_user.id not in settings.ADMIN_IDS: return
+    data = await state.get_data()
+    feedback_id = data.get("feedback_id")
+    user_id = data.get("replying_to")
+    
+    if not user_id or not feedback_id:
+        await callback.answer("Помилка даних", show_alert=True)
+        return
+
+    reply_type = callback.data
+    if reply_type == "quick_reply_custom":
+        await callback.message.answer("💬 Напиши свою відповідь:")
+        await callback.answer()
+        return
+
+    reply_text = QUICK_REPLIES.get(reply_type, "Error")
+    await db.add_reply(feedback_id, callback.from_user.id, reply_text)
+
+    try:
+        await callback.bot.send_message(
+            user_id, 
+            f"📬 <b>Відповідь від адміністратора:</b>\n\n{reply_text}", 
+            parse_mode=ParseMode.HTML
+        )
+        await callback.message.answer("✅ Відповідь надіслана!")
+    except Exception as e:
+        await callback.message.answer(f"❌ Помилка: {e}")
+    
+    await state.clear()
+    await callback.answer()
+
+@admin_router.message(F.text, AdminStates.replying)
+async def send_custom_reply(message: Message, state: FSMContext):
+    if message.from_user.id not in settings.ADMIN_IDS: return
+    data = await state.get_data()
+    feedback_id = data.get("feedback_id")
+    user_id = data.get("replying_to")
+
+    if not user_id: return
+    await db.add_reply(feedback_id, message.from_user.id, message.text)
+
+    try:
+        await message.bot.send_message(
+            user_id, 
+            f"📬 <b>Відповідь від адміністратора:</b>\n\n{message.text}", 
+            parse_mode=ParseMode.HTML
+        )
+        await message.answer("✅ Відповідь надіслана!")
+    except Exception as e:
+        await message.answer(f"❌ Помилка: {e}")
+    await state.clear()
 
 @admin_router.callback_query(F.data.startswith("publish_to_"))
 async def publish_to_channel(callback: CallbackQuery, state: FSMContext):
@@ -160,59 +249,3 @@ async def do_publish_feedback(callback: CallbackQuery, feedback_id: int, feedbac
     except Exception as e:
         await callback.message.answer(f"❌ Помилка при публікації: {e}")
         print(f"Publish error: {e}")
-
-@admin_router.callback_query(F.data.startswith("quick_reply_"))
-async def quick_reply(callback: CallbackQuery, state: FSMContext):
-    if callback.from_user.id not in settings.ADMIN_IDS: return
-    data = await state.get_data()
-    feedback_id = data.get("feedback_id")
-    user_id = data.get("replying_to")
-    
-    if not user_id or not feedback_id:
-        await callback.answer("Помилка даних", show_alert=True)
-        return
-
-    reply_type = callback.data
-    if reply_type == "quick_reply_custom":
-        await callback.message.answer("💬 Напиши свою відповідь:")
-        await callback.answer()
-        return
-
-    reply_text = QUICK_REPLIES.get(reply_type, "Error")
-    await db.add_reply(feedback_id, callback.from_user.id, reply_text)
-
-    try:
-        # 🔥 ВИПРАВЛЕНО ТУТ
-        await callback.bot.send_message(
-            user_id, 
-            f"📬 <b>Відповідь від адміністратора:</b>\n\n{reply_text}", 
-            parse_mode=ParseMode.HTML
-        )
-        await callback.message.answer("✅ Відповідь надіслана!")
-    except Exception as e:
-        await callback.message.answer(f"❌ Помилка: {e}")
-    
-    await state.clear()
-    await callback.answer()
-
-@admin_router.message(F.text, AdminStates.replying)
-async def send_custom_reply(message: Message, state: FSMContext):
-    if message.from_user.id not in settings.ADMIN_IDS: return
-    data = await state.get_data()
-    feedback_id = data.get("feedback_id")
-    user_id = data.get("replying_to")
-
-    if not user_id: return
-    await db.add_reply(feedback_id, message.from_user.id, message.text)
-
-    try:
-        # 🔥 І ТУТ ТЕЖ ВИПРАВЛЕНО
-        await message.bot.send_message(
-            user_id, 
-            f"📬 <b>Відповідь від адміністратора:</b>\n\n{message.text}", 
-            parse_mode=ParseMode.HTML
-        )
-        await message.answer("✅ Відповідь надіслана!")
-    except Exception as e:
-        await message.answer(f"❌ Помилка: {e}")
-    await state.clear()
