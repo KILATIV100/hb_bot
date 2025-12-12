@@ -20,18 +20,18 @@ async def notify_admins(
     """Надсилає повідомлення всім адмінам в приватні чати з кнопками"""
     username = username or "Без юзернейму"
 
-    # Категорія з емодзі
-    category_emoji = {
-        "новина": "📰",
-        "реклама": "📢",
-        "інше": "💬"
+    # Категорія з емодзі та правильною граматикою української мови
+    category_labels = {
+        "новина": ("📰", "Нова НОВИНА"),
+        "реклама": ("📢", "Новий запит на РЕКЛАМУ"),
+        "інше": ("💬", "Нове повідомлення")
     }
-    emoji = category_emoji.get(category, "📨")
+    emoji, label = category_labels.get(category, ("📨", "Новий ЗАПИТ"))
 
     if is_anonymous:
-        user_info = f"{emoji} <b>Новий {category.upper()} (👻 АНОНІМНО)</b>\n\n"
+        user_info = f"{emoji} <b>{label} (👻 АНОНІМНО)</b>\n\n"
     else:
-        user_info = f"{emoji} <b>Новий {category.upper()}</b> від @{username} (ID: {user_id})\n\n"
+        user_info = f"{emoji} <b>{label}</b> від @{username} (ID: {user_id})\n\n"
 
     if text:
         user_info += text

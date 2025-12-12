@@ -13,8 +13,8 @@ router = Router()
 @router.message(CommandStart())
 async def cmd_start(message: Message):
     welcome_text = (
-        "👋 Привіт!\n\n"
-        "Це офіційний бот XBrovary зворотного зв'язку 📰\n\n"
+        "👋 Привіт Дімон на звʼязку!\n\n"
+        "Це офіційний бот XBrovary 📰\n\n"
         "Натисни СТАРТ щоб почати!"
     )
     await message.answer(welcome_text, reply_markup=get_start_kb())
