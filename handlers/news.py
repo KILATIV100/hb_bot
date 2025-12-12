@@ -13,11 +13,11 @@ router = Router()
 @router.message(F.text.in_(["📰 Надіслати новину", "Надіслати новину"]))
 async def start_news(message: Message, state: FSMContext):
     if not await db.check_rate_limit(message.from_user.id):
-        await message.answer("🚫 Будь ласка, зачекай 1 хвилину.")
+        await message.answer("🚫 Будь ласка, зачекай 10 секунд.")
         return
     await state.set_state(FeedbackStates.waiting_for_news)
     await state.update_data(feedback_type="news")
-    await message.answer("📰 **Надішли новину:**\n\nНапиши текст, додай фото або відео (можна альбомом).")
+    await message.answer("📰 Надішли новину:\n\nНапиши текст, додай фото або відео (можна альбомом).")
 
 @router.message(FeedbackStates.waiting_for_news)
 async def receive_news(message: Message, state: FSMContext, album: List[Message] = None):
@@ -40,8 +40,7 @@ async def receive_news(message: Message, state: FSMContext, album: List[Message]
 
     await state.update_data(content=content, media_files=media_files)
 
-    # Гарне прев'ю
-    msg_preview = f"🔍 **Перевірка:**\n\n📝 <b>Текст:</b> {content[:200]}"
+    msg_preview = f"🔍 Перевірка:\n\n📝 <b>Текст:</b> {content[:200]}"
     if len(content) > 200: msg_preview += "..."
     
     if media_files:
@@ -74,7 +73,7 @@ async def confirm_news(callback: CallbackQuery, state: FSMContext, bot: Bot):
         is_anonymous=False
     )
 
-    await callback.message.answer("✅ **Новина успішно надіслана!** Дякуємо ❤️", reply_markup=get_main_menu_kb())
+    await callback.message.answer("✅ Новина успішно надіслана! Дякуємо ❤️", reply_markup=get_main_menu_kb())
     await state.clear()
     await callback.answer()
 
