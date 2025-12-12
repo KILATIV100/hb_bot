@@ -13,11 +13,11 @@ router = Router()
 @router.message(F.text.in_(["💬 Зворотний зв'язок", "💬 Інше повідомлення", "Інше повідомлення"]))
 async def start_other(message: Message, state: FSMContext):
     if not await db.check_rate_limit(message.from_user.id):
-        await message.answer("🚫 Будь ласка, зачекай 1 хвилину.")
+        await message.answer("🚫 Будь ласка, зачекай 10 секунд.")
         return
     await state.set_state(FeedbackStates.waiting_for_other)
     await state.update_data(feedback_type="other")
-    await message.answer("💬 **Напишіть нам:**\n\nПитання, пропозиція чи просто відгук. Слухаємо вас!")
+    await message.answer("💬 Напишіть нам:\n\nПитання, пропозиція чи просто відгук. Слухаємо вас!")
 
 @router.message(FeedbackStates.waiting_for_other)
 async def receive_other(message: Message, state: FSMContext, album: List[Message] = None):
@@ -39,7 +39,7 @@ async def receive_other(message: Message, state: FSMContext, album: List[Message
 
     await state.update_data(content=content, media_files=media_files)
     
-    msg_preview = f"🔍 **Перевірка:**\n\n📝 <b>Текст:</b> {content[:200]}"
+    msg_preview = f"🔍 Перевірка:\n\n📝 <b>Текст:</b> {content[:200]}"
     if media_files: msg_preview += f"\n📎 <b>Файлів:</b> {len(media_files)} шт."
     msg_preview += "\n\n<i>Відправляємо?</i>"
 
@@ -67,7 +67,7 @@ async def confirm_other(callback: CallbackQuery, state: FSMContext, bot: Bot):
         is_anonymous=False
     )
 
-    await callback.message.answer("✅ **Повідомлення отримано!** Дякуємо ❤️", reply_markup=get_main_menu_kb())
+    await callback.message.answer("✅ Повідомлення отримано! Дякуємо ❤️", reply_markup=get_main_menu_kb())
     await state.clear()
     await callback.answer()
 
