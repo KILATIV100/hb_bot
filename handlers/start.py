@@ -1,4 +1,5 @@
 # handlers/start.py
+from typing import List
 from aiogram import Router, F, Bot
 from aiogram.types import Message
 from aiogram.filters import CommandStart, Command, StateFilter
@@ -52,7 +53,6 @@ async def cmd_about(message: Message):
 
 @router.message(F.text == "❓ Допомога")
 async def cmd_help_button(message: Message):
-    # Текст допомоги для звичайних користувачів
     help_text = (
         "❓ <b>Як користуватись ботом?</b>\n\n"
         "<b>📰 Надіслати новину:</b>\n"
@@ -68,7 +68,6 @@ async def cmd_help_button(message: Message):
 
 @router.message(Command("help"))
 async def cmd_help(message: Message):
-    # Розширений текст для адмінів, звичайний для юзерів
     is_admin = message.from_user.id in settings.ADMIN_IDS
     
     help_text = (
@@ -85,12 +84,10 @@ async def cmd_help(message: Message):
             "<b>📸 Водяні знаки:</b>\n"
             "• Працює для ФОТО та ВІДЕО.\n"
             "• Логотип накладається у <b>5 точках</b> (центр + кути).\n"
-            "• Обробка відео займає час (дочекайтесь повідомлення).\n\n"
+            "• Підтримуються АЛЬБОМИ (до 10 файлів).\n\n"
             "<b>📊 Команди:</b>\n"
-            "• /stats - статистика за день/тиждень/все\n"
-            "• /news - останні 20 новин\n"
-            "• /ads - останні 20 реклам\n"
-            "• /other - останні 20 інших\n"
+            "• /stats - статистика\n"
+            "• /news, /ads, /other - фільтри\n"
             "• /id - показати ID"
         )
     
@@ -103,39 +100,55 @@ async def cmd_help(message: Message):
                            "ℹ️ Про бот", "❓ Допомога", "меню", "головне меню", "назад", "▶️ СТАРТ"]))
     | F.photo | F.video | F.document
 )
-async def handle_direct_message(message: Message, bot: Bot):
+async def handle_direct_message(message: Message, bot: Bot, album: List[Message] = None):
     """Ловить звичайні повідомлення (текст + медіа), написані прямо в боті"""
     if not await db.check_rate_limit(message.from_user.id):
         await message.answer("Зачекай 1 хвилину перед наступною відправкою 🚫")
         return
 
     username = message.from_user.username or "Без імені"
-    content = message.text or message.caption or "Без тексту"
+    content = "Без тексту"
+    media_files = [] # Список словників [{'file_id': '...', 'type': 'photo'}]
 
-    # Визначаємо тип медіа та file_id
-    photo_file_id = None
-    video_file_id = None
-    document_file_id = None
+    # 1. Логіка збору медіа (підтримка альбомів)
+    if album:
+        # Шукаємо текст
+        for msg in album:
+            if msg.caption: content = msg.caption; break
+            if msg.text: content = msg.text; break
+        
+        # Збираємо файли
+        for msg in album:
+            if msg.photo:
+                media_files.append({'file_id': msg.photo[-1].file_id, 'type': 'photo'})
+            elif msg.video:
+                media_files.append({'file_id': msg.video.file_id, 'type': 'video'})
+            elif msg.document:
+                media_files.append({'file_id': msg.document.file_id, 'type': 'document'})
+    else:
+        # Одиночне повідомлення
+        content = message.text or message.caption or "Без тексту"
+        if message.photo:
+            media_files.append({'file_id': message.photo[-1].file_id, 'type': 'photo'})
+        elif message.video:
+            media_files.append({'file_id': message.video.file_id, 'type': 'video'})
+        elif message.document:
+            media_files.append({'file_id': message.document.file_id, 'type': 'document'})
 
-    if message.photo:
-        photo_file_id = message.photo[-1].file_id
-    elif message.video:
-        video_file_id = message.video.file_id
-    elif message.document:
-        document_file_id = message.document.file_id
-
-    # Додаємо feedback як "інше"
+    # 2. Створюємо запис в БД (ТІЛЬКИ ТЕКСТ, без file_id)
+    # Функція add_feedback тепер не приймає фото/відео аргументів
     feedback_id = await db.add_feedback(
         user_id=message.from_user.id, 
         username=username, 
         category="інше", 
-        content=content,
-        photo_file_id=photo_file_id,
-        video_file_id=video_file_id,
-        document_file_id=document_file_id
+        content=content
     )
 
-    # Відправляємо адмінам
+    # 3. Додаємо медіа в нову таблицю
+    for m in media_files:
+        await db.add_media(feedback_id, m['file_id'], m['type'])
+
+    # 4. Відправляємо адмінам (використовуємо нову логіку зі списком media_files)
     await notify_admins(
         bot=bot,
         user_id=message.from_user.id,
@@ -143,9 +156,7 @@ async def handle_direct_message(message: Message, bot: Bot):
         category="інше",
         feedback_id=feedback_id,
         text=content,
-        photo=message.photo[-1].file_id if message.photo else None,
-        video=message.video.file_id if message.video else None,
-        document=message.document.file_id if message.document else None,
+        media_files=media_files, # <-- Передаємо список
         is_anonymous=False
     )
 
