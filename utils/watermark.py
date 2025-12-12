@@ -3,6 +3,12 @@ import io
 import os
 import asyncio
 from PIL import Image
+
+# 🔥 ФІКС ДЛЯ MOVIEPY + PILLOW 10/11
+# MoviePy використовує видалений атрибут ANTIALIAS, повертаємо його назад вручну
+if not hasattr(Image, 'ANTIALIAS'):
+    Image.ANTIALIAS = Image.Resampling.LANCZOS
+
 from aiogram import Bot
 from aiogram.types import BufferedInputFile, FSInputFile
 from config import settings
@@ -77,13 +83,16 @@ async def add_watermark_and_send(bot: Bot, file_id: str, caption: str, parse_mod
 
 def process_video_sync(input_path: str, output_path: str, logo_path: str):
     """Синхронна функція для обробки відео через moviepy"""
+    # Імпорт всередині функції для економії пам'яті при старті
     from moviepy.editor import VideoFileClip, ImageClip, CompositeVideoClip
     
     video = None
+    final = None
     try:
         video = VideoFileClip(input_path)
         
         if os.path.exists(logo_path):
+            # Створюємо кліп логотипу
             logo = (ImageClip(logo_path)
                     .set_duration(video.duration)
                     .resize(width=video.w * 0.3)  # 30% ширини відео
@@ -94,17 +103,27 @@ def process_video_sync(input_path: str, output_path: str, logo_path: str):
         else:
             final = video
 
-        # Рендерінг (використовуємо preset='ultrafast' для швидкості)
-        final.write_videofile(output_path, codec="libx264", audio_codec="aac", preset="ultrafast", logger=None)
+        # Рендерінг (preset='ultrafast' для швидкості, codec='libx264' для сумісності з Telegram)
+        # threads=4 прискорює обробку
+        final.write_videofile(
+            output_path, 
+            codec="libx264", 
+            audio_codec="aac", 
+            preset="ultrafast", 
+            threads=4,
+            logger=None
+        )
         
-        # Закриваємо ресурси
-        final.close()
     except Exception as e:
         print(f"MoviePy Error: {e}")
         raise e
     finally:
-        if video:
-            video.close()
+        # Важливо закривати кліпи, щоб звільнити пам'ять
+        try:
+            if final: final.close()
+            if video: video.close()
+        except:
+            pass
 
 
 async def add_video_watermark_and_send(bot: Bot, file_id: str, caption: str, parse_mode: str = "HTML") -> None:
@@ -124,13 +143,17 @@ async def add_video_watermark_and_send(bot: Bot, file_id: str, caption: str, par
             return
 
         # 3. Обробляємо відео (в окремому потоці, щоб не блокувати бота)
-        print("🎬 Початок обробки відео...")
+        # Повідомляємо в лог, бо це може зайняти час
+        print(f"🎬 Обробка відео {file_id}...")
         await asyncio.to_thread(process_video_sync, input_path, output_path, LOGO_PNG_PATH)
-        print("✅ Обробка завершена")
+        print("✅ Обробка завершена успішно")
 
         # 4. Відправляємо результат
-        video_file = FSInputFile(output_path)
-        await bot.send_video(settings.CHANNEL_ID, video=video_file, caption=caption, parse_mode=parse_mode)
+        if os.path.exists(output_path):
+            video_file = FSInputFile(output_path)
+            await bot.send_video(settings.CHANNEL_ID, video=video_file, caption=caption, parse_mode=parse_mode)
+        else:
+            raise Exception("Файл результату не створено")
 
     except Exception as e:
         print(f"❌ Помилка відео-вотермарки: {e}")
@@ -139,7 +162,11 @@ async def add_video_watermark_and_send(bot: Bot, file_id: str, caption: str, par
     
     finally:
         # 5. Видаляємо тимчасові файли
+        # Невелика затримка, щоб файл встиг відправитись перед видаленням (хоча FSInputFile має впоратись)
+        await asyncio.sleep(1)
         if os.path.exists(input_path):
-            os.remove(input_path)
+            try: os.remove(input_path)
+            except: pass
         if os.path.exists(output_path):
-            os.remove(output_path)
+            try: os.remove(output_path)
+            except: pass
