@@ -2,8 +2,10 @@
 import io
 import os
 import asyncio
-from PIL import Image
+from math import ceil
+from PIL import Image, ImageEnhance
 
+# Хак для совместимости версий Pillow
 if not hasattr(Image, 'ANTIALIAS'):
     Image.ANTIALIAS = Image.Resampling.LANCZOS
 
@@ -11,84 +13,115 @@ from aiogram import Bot
 from aiogram.types import BufferedInputFile, InputMediaPhoto, InputMediaVideo, FSInputFile
 from config import settings
 
-# Семафор для обмеження навантаження при обробці відео
 video_processing_semaphore = asyncio.Semaphore(1)
 
 BASE_DIR = os.path.dirname(os.path.dirname(__file__))
-# Шлях до логотипу (використовуємо PNG, бо він надійніший)
 LOGO_PNG_PATH = os.path.join(BASE_DIR, "assets", "xbrovary_logo.png")
 TEMP_DIR = os.path.join(BASE_DIR, "temp")
 
 if not os.path.exists(TEMP_DIR):
     os.makedirs(TEMP_DIR)
 
+def create_tiled_watermark(base_width: int, base_height: int) -> Image.Image:
+    """
+    Создает прозрачное изображение размером с base_width x base_height,
+    полностью заполненное паттерном из логотипов.
+    """
+    if not os.path.exists(LOGO_PNG_PATH):
+        # Если лого нет, возвращаем пустой прозрачный слой
+        return Image.new("RGBA", (base_width, base_height), (0, 0, 0, 0))
+
+    # 1. Загружаем и готовим логотип
+    logo = Image.open(LOGO_PNG_PATH).convert("RGBA")
+    
+    # Размер логотипа = 15% от ширины основного изображения (аккуратный размер)
+    target_logo_width = int(base_width * 0.15)
+    if target_logo_width < 50: target_logo_width = 50  # Минимальный размер
+    
+    aspect_ratio = logo.height / logo.width
+    target_logo_height = int(target_logo_width * aspect_ratio)
+    
+    logo = logo.resize((target_logo_width, target_logo_height), Image.Resampling.LANCZOS)
+
+    # 2. Поворачиваем логотип (-30 градусов)
+    logo = logo.rotate(30, expand=True, resample=Image.Resampling.BICUBIC)
+
+    # 3. Делаем полупрозрачным (15% непрозрачности)
+    alpha = logo.split()[3]
+    alpha = ImageEnhance.Brightness(alpha).enhance(0.15) # 0.15 = 15% видимости
+    logo.putalpha(alpha)
+
+    # 4. Создаем пустой слой для паттерна
+    watermark_layer = Image.new("RGBA", (base_width, base_height), (0, 0, 0, 0))
+    
+    # 5. Заполняем плиткой
+    logo_w, logo_h = logo.size
+    
+    # Шаг сетки (расстояние между логотипами)
+    step_x = int(logo_w * 1.5)
+    step_y = int(logo_h * 1.5)
+
+    for y in range(0, base_height, step_y):
+        for x in range(0, base_width, step_x):
+            # Смещаем каждый второй ряд для "шахматного" эффекта
+            offset_x = int(step_x / 2) if (y // step_y) % 2 == 1 else 0
+            
+            draw_x = x + offset_x
+            
+            # Если вылезли за край, не рисуем лишнее (оптимизация не критична здесь)
+            if draw_x < base_width - logo_w * 0.2: 
+                watermark_layer.paste(logo, (draw_x, y), logo)
+
+    return watermark_layer
+
 def overlay_logo_on_image(image: Image.Image) -> Image.Image:
-    """Накладає логотип 5 разів (центр + кути)"""
+    """Накладывает паттерн на фото"""
     try:
-        if not os.path.exists(LOGO_PNG_PATH): return image
-        logo = Image.open(LOGO_PNG_PATH).convert("RGBA")
+        if image.mode != "RGBA":
+            image = image.convert("RGBA")
+            
+        # Генерируем слой с паттерном под размер фото
+        pattern = create_tiled_watermark(image.width, image.height)
         
-        # Масштабуємо лого
-        logo_width = int(image.width * 0.40)
-        if logo_width <= 0: logo_width = 50
-        aspect_ratio = logo.height / logo.width
-        logo_height = int(logo_width * aspect_ratio)
-        logo = logo.resize((logo_width, logo_height), Image.Resampling.LANCZOS)
-
-        # Прозорість
-        if logo.mode == "RGBA":
-            alpha = logo.split()[3]
-            alpha = alpha.point(lambda p: int(p * 0.7)) 
-            logo.putalpha(alpha)
-
-        if image.mode != "RGBA": image = image.convert("RGBA")
-
-        W, H = image.width, image.height
-        w, h = logo_width, logo_height
-        padding = int(W * 0.05)
-
-        # Позиції: центр + 4 кути
-        positions = [
-            ((W - w) // 2, (H - h) // 2),
-            (padding, padding),
-            (W - w - padding, padding),
-            (padding, H - h - padding),
-            (W - w - padding, H - h - padding)
-        ]
-
-        for x, y in positions:
-            image.paste(logo, (x, y), logo)
-        return image
+        # Накладываем (композитинг)
+        return Image.alpha_composite(image, pattern)
+        
     except Exception as e:
         print(f"Error overlay: {e}")
         return image
 
-def process_video_sync(input_path: str, output_path: str, logo_path: str):
-    """Синхронна обробка відео через MoviePy"""
+def process_video_sync(input_path: str, output_path: str):
+    """Синхронна обробка відео через MoviePy з паттерном"""
     from moviepy.editor import VideoFileClip, ImageClip, CompositeVideoClip
     video = None
     final = None
+    
     try:
         video = VideoFileClip(input_path)
-        if os.path.exists(logo_path):
-            base_logo = (ImageClip(logo_path).set_duration(video.duration)
-                         .resize(width=video.w * 0.40).set_opacity(0.7))
-            W, H = video.size
-            w, h = base_logo.size
-            padding = int(W * 0.05)
-            
-            logos = [
-                base_logo.set_position(("center", "center")),
-                base_logo.set_position((padding, padding)),
-                base_logo.set_position((W - w - padding, padding)),
-                base_logo.set_position((padding, H - h - padding)),
-                base_logo.set_position((W - w - padding, H - h - padding))
-            ]
-            final = CompositeVideoClip([video, *logos])
-        else:
-            final = video
+        
+        # 1. Генерируем паттерн как картинку PIL
+        # Важливо: MoviePy очікує numpy array або шлях. Збережемо тимчасово.
+        w, h = video.size
+        pattern_img = create_tiled_watermark(w, h)
+        
+        pattern_path = output_path + "_pattern.png"
+        pattern_img.save(pattern_path, format="PNG")
+        
+        # 2. Создаем ImageClip из паттерна на всю длину видео
+        watermark_clip = (ImageClip(pattern_path)
+                          .set_duration(video.duration)
+                          .set_position(("center", "center"))) # Паттерн и так во весь экран
+        
+        # 3. Накладываем
+        final = CompositeVideoClip([video, watermark_clip])
 
+        # 4. Рендерим
         final.write_videofile(output_path, codec="libx264", audio_codec="aac", preset="ultrafast", threads=4, logger=None)
+        
+        # Удаляем временный файл паттерна
+        if os.path.exists(pattern_path):
+            os.remove(pattern_path)
+            
     except Exception as e:
         print(f"MoviePy error: {e}")
         raise e
@@ -101,7 +134,6 @@ def process_video_sync(input_path: str, output_path: str, logo_path: str):
 async def process_media_for_album(bot: Bot, file_id: str, file_type: str, use_watermark: bool = True):
     """
     Готує об'єкт InputMedia для альбому (з вотермаркою або без).
-    Це та сама функція, яку шукає admin.py!
     """
     try:
         if file_type == 'photo':
@@ -110,10 +142,16 @@ async def process_media_for_album(bot: Bot, file_id: str, file_type: str, use_wa
                 file_data = await bot.download_file(file.file_path)
                 image = Image.open(io.BytesIO(file_data.read()))
                 
+                # Накладываем паттерн
                 processed_img = overlay_logo_on_image(image)
                 
                 output = io.BytesIO()
-                if processed_img.mode == "RGBA": processed_img = processed_img.convert("RGB")
+                # Конвертируем в RGB для JPEG (убираем альфа-канал)
+                if processed_img.mode == "RGBA":
+                    background = Image.new("RGB", processed_img.size, (255, 255, 255))
+                    background.paste(processed_img, mask=processed_img.split()[3]) # 3 is the alpha channel
+                    processed_img = background
+                
                 processed_img.save(output, format="JPEG", quality=95)
                 output.seek(0)
                 
@@ -130,16 +168,15 @@ async def process_media_for_album(bot: Bot, file_id: str, file_type: str, use_wa
                     file = await bot.get_file(file_id)
                     await bot.download_file(file.file_path, destination=input_path)
                     
-                    if os.path.exists(LOGO_PNG_PATH):
-                        await asyncio.to_thread(process_video_sync, input_path, output_path, LOGO_PNG_PATH)
-                        video_file = FSInputFile(output_path)
-                        return InputMediaVideo(media=video_file)
-                    else:
-                        return InputMediaVideo(media=file_id)
+                    # Запускаем обработку видео
+                    await asyncio.to_thread(process_video_sync, input_path, output_path)
+                    
+                    video_file = FSInputFile(output_path)
+                    return InputMediaVideo(media=video_file)
             else:
                 return InputMediaVideo(media=file_id)
         
-        # Якщо тип невідомий або документ
+        # Fallback для документов и прочего
         return InputMediaPhoto(media=file_id)
                 
     except Exception as e:
