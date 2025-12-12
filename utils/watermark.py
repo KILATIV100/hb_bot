@@ -24,7 +24,7 @@ if not os.path.exists(TEMP_DIR):
 
 
 def overlay_logo_on_image(image: Image.Image) -> Image.Image:
-    """Накладає логотип XBrovary на зображення"""
+    """Накладає логотип XBrovary: по центру та 4 кутам"""
     try:
         if not os.path.exists(LOGO_PNG_PATH):
             print(f"⚠️ Файл логотипу {LOGO_PNG_PATH} відсутній. Публікуємо без вотермарки.")
@@ -32,7 +32,7 @@ def overlay_logo_on_image(image: Image.Image) -> Image.Image:
 
         logo = Image.open(LOGO_PNG_PATH).convert("RGBA")
 
-        # Масштабуємо логотип на 40% ширини фото
+        # 1. Налаштування розміру (40% від ширини)
         logo_width = int(image.width * 0.40)
         if logo_width <= 0: logo_width = 50
         
@@ -40,19 +40,33 @@ def overlay_logo_on_image(image: Image.Image) -> Image.Image:
         logo_height = int(logo_width * aspect_ratio)
         logo = logo.resize((logo_width, logo_height), Image.Resampling.LANCZOS)
 
-        # Прозорість 30%
+        # 2. Налаштування прозорості (70% видимості)
         if logo.mode == "RGBA":
             alpha = logo.split()[3]
             alpha = alpha.point(lambda p: int(p * 0.7)) 
             logo.putalpha(alpha)
 
+        # Конвертуємо основне зображення в RGBA
         if image.mode != "RGBA":
             image = image.convert("RGBA")
 
-        x = (image.width - logo_width) // 2
-        y = (image.height - logo_height) // 2
+        # 3. Розрахунок координат
+        W, H = image.width, image.height
+        w, h = logo_width, logo_height
+        padding = int(W * 0.05)  # Відступ 5% від ширини
 
-        image.paste(logo, (x, y), logo)
+        positions = [
+            ((W - w) // 2, (H - h) // 2),       # Центр
+            (padding, padding),                 # Лівий верхній
+            (W - w - padding, padding),         # Правий верхній
+            (padding, H - h - padding),         # Лівий нижній
+            (W - w - padding, H - h - padding)  # Правий нижній
+        ]
+
+        # 4. Накладання 5 логотипів
+        for x, y in positions:
+            image.paste(logo, (x, y), logo)
+
         return image
     except Exception as e:
         print(f"❌ Помилка при накладанні логотипу: {e}")
@@ -82,8 +96,7 @@ async def add_watermark_and_send(bot: Bot, file_id: str, caption: str, parse_mod
 
 
 def process_video_sync(input_path: str, output_path: str, logo_path: str):
-    """Синхронна функція для обробки відео через moviepy"""
-    # Імпорт всередині функції для економії пам'яті при старті
+    """Синхронна функція для обробки відео через moviepy (5 позицій)"""
     from moviepy.editor import VideoFileClip, ImageClip, CompositeVideoClip
     
     video = None
@@ -92,19 +105,31 @@ def process_video_sync(input_path: str, output_path: str, logo_path: str):
         video = VideoFileClip(input_path)
         
         if os.path.exists(logo_path):
-            # Створюємо кліп логотипу
-            logo = (ImageClip(logo_path)
+            # Базовий кліп логотипу
+            base_logo = (ImageClip(logo_path)
                     .set_duration(video.duration)
-                    .resize(width=video.w * 0.3)  # 30% ширини відео
-                    .set_opacity(0.7)
-                    .set_position(("center", "center")))
+                    .resize(width=video.w * 0.40)  # 40% ширини
+                    .set_opacity(0.7))
             
-            final = CompositeVideoClip([video, logo])
+            # Розрахунок координат
+            W, H = video.size
+            w, h = base_logo.size
+            padding = int(W * 0.05) # Відступ 5%
+
+            # Позиції для MoviePy
+            # set_position повертає копію кліпу з новою позицією
+            logo_center = base_logo.set_position(("center", "center"))
+            logo_tl = base_logo.set_position((padding, padding))
+            logo_tr = base_logo.set_position((W - w - padding, padding))
+            logo_bl = base_logo.set_position((padding, H - h - padding))
+            logo_br = base_logo.set_position((W - w - padding, H - h - padding))
+
+            # Компонуємо все разом
+            final = CompositeVideoClip([video, logo_center, logo_tl, logo_tr, logo_bl, logo_br])
         else:
             final = video
 
-        # Рендерінг (preset='ultrafast' для швидкості, codec='libx264' для сумісності з Telegram)
-        # threads=4 прискорює обробку
+        # Рендерінг
         final.write_videofile(
             output_path, 
             codec="libx264", 
@@ -118,7 +143,6 @@ def process_video_sync(input_path: str, output_path: str, logo_path: str):
         print(f"MoviePy Error: {e}")
         raise e
     finally:
-        # Важливо закривати кліпи, щоб звільнити пам'ять
         try:
             if final: final.close()
             if video: video.close()
@@ -142,9 +166,8 @@ async def add_video_watermark_and_send(bot: Bot, file_id: str, caption: str, par
             await bot.send_video(settings.CHANNEL_ID, video=file_id, caption=caption, parse_mode=parse_mode)
             return
 
-        # 3. Обробляємо відео (в окремому потоці, щоб не блокувати бота)
-        # Повідомляємо в лог, бо це може зайняти час
-        print(f"🎬 Обробка відео {file_id}...")
+        # 3. Обробляємо відео
+        print(f"🎬 Обробка відео {file_id} (5 логотипів)...")
         await asyncio.to_thread(process_video_sync, input_path, output_path, LOGO_PNG_PATH)
         print("✅ Обробка завершена успішно")
 
@@ -157,12 +180,9 @@ async def add_video_watermark_and_send(bot: Bot, file_id: str, caption: str, par
 
     except Exception as e:
         print(f"❌ Помилка відео-вотермарки: {e}")
-        # Фолбек: оригінал
         await bot.send_video(settings.CHANNEL_ID, video=file_id, caption=caption, parse_mode=parse_mode)
     
     finally:
-        # 5. Видаляємо тимчасові файли
-        # Невелика затримка, щоб файл встиг відправитись перед видаленням (хоча FSInputFile має впоратись)
         await asyncio.sleep(1)
         if os.path.exists(input_path):
             try: os.remove(input_path)
