@@ -47,7 +47,7 @@ def create_pattern_layer(base_width: int, base_height: int) -> Image.Image:
         
         # Прозорість: 0.7 (70%)
         r, g, b, alpha = logo.split()
-        alpha = ImageEnhance.Brightness(alpha).enhance(0.7)
+        alpha = ImageEnhance.Brightness(alpha).enhance(0.1)
         logo.putalpha(alpha)
         # ---------------------
 
