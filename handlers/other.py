@@ -76,3 +76,30 @@ async def cancel_other(callback: CallbackQuery, state: FSMContext):
     await callback.message.answer("❌ Скасовано.", reply_markup=get_main_menu_kb())
     await state.clear()
     await callback.answer()
+    # handlers/other.py (Додайте це в кінець файлу)
+from aiogram.types import ChatMemberUpdated
+from config import settings
+
+@router.my_chat_member()
+async def on_bot_added_to_channel_or_group(event: ChatMemberUpdated, bot: Bot):
+    """
+    Автоматично виходить з невідомих груп та каналів.
+    Дозволяє бути тільки в основному каналі (CHANNEL_ID).
+    """
+    # Ігноруємо оновлення в особистих чатах
+    if event.chat.type == "private":
+        return
+
+    # Якщо бота додали в "наш" канал — все ок, залишаємось
+    if event.chat.id == settings.CHANNEL_ID:
+        return
+
+    # У всіх інших випадках (ліві групи, канали) — виходимо
+    try:
+        # Можна спробувати написати прощальне повідомлення (якщо є права)
+        await bot.send_message(event.chat.id, "🚫 Цей бот працює тільки в режимі прийому новин в особистих повідомленнях.")
+    except:
+        pass
+    
+    # Виходимо з чату
+    await bot.leave_chat(event.chat.id)
