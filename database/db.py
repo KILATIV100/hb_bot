@@ -1,9 +1,8 @@
-# database/db.py — ФІНАЛЬНА ВЕРСІЯ, 100% БЕЗ ПОМИЛОК
+# database/db.py
 import psycopg
 from psycopg.rows import dict_row
 from datetime import datetime
 from config import settings
-
 
 class DB:
     def __init__(self):
@@ -15,6 +14,7 @@ class DB:
 
     async def create_tables(self):
         async with self.conn.cursor() as cur:
+            # Основна таблиця
             await cur.execute('''
                 CREATE TABLE IF NOT EXISTS feedbacks (
                     id SERIAL PRIMARY KEY,
@@ -22,24 +22,23 @@ class DB:
                     username TEXT,
                     category TEXT,
                     content TEXT,
-                    photo_file_id TEXT,
-                    video_file_id TEXT,
-                    document_file_id TEXT,
-                    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    group_message_id INT
                 )
             ''')
+            
+            # 🔥 НОВА ТАБЛИЦЯ ДЛЯ МЕДІА (АЛЬБОМІВ)
             await cur.execute('''
-                ALTER TABLE feedbacks ADD COLUMN IF NOT EXISTS photo_file_id TEXT
+                CREATE TABLE IF NOT EXISTS feedback_media (
+                    id SERIAL PRIMARY KEY,
+                    feedback_id INT REFERENCES feedbacks(id) ON DELETE CASCADE,
+                    file_id TEXT,
+                    file_type TEXT, -- 'photo', 'video', 'document'
+                    media_group_id TEXT
+                )
             ''')
-            await cur.execute('''
-                ALTER TABLE feedbacks ADD COLUMN IF NOT EXISTS video_file_id TEXT
-            ''')
-            await cur.execute('''
-                ALTER TABLE feedbacks ADD COLUMN IF NOT EXISTS document_file_id TEXT
-            ''')
-            await cur.execute('''
-                ALTER TABLE feedbacks ADD COLUMN IF NOT EXISTS group_message_id INT
-            ''')
+
+            # Таблиці лімітів та відповідей
             await cur.execute('''
                 CREATE TABLE IF NOT EXISTS rate_limits (
                     user_id BIGINT PRIMARY KEY,
@@ -57,21 +56,37 @@ class DB:
             ''')
             await self.conn.commit()
 
-    async def add_feedback(self, user_id: int, username: str, category: str, content: str,
-                          photo_file_id: str | None = None, video_file_id: str | None = None,
-                          document_file_id: str | None = None) -> int:
+    async def add_feedback(self, user_id: int, username: str, category: str, content: str) -> int:
+        """Створює запис про фідбек і повертає його ID"""
         async with self.conn.cursor() as cur:
             await cur.execute(
-                "INSERT INTO feedbacks (user_id, username, category, content, photo_file_id, video_file_id, document_file_id) VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING id",
-                (user_id, username, category, content, photo_file_id, video_file_id, document_file_id)
+                "INSERT INTO feedbacks (user_id, username, category, content) VALUES (%s, %s, %s, %s) RETURNING id",
+                (user_id, username, category, content)
             )
             feedback_id = (await cur.fetchone())["id"]
+            
+            # Оновлюємо ліміт
             await cur.execute(
                 "INSERT INTO rate_limits (user_id, last_feedback) VALUES (%s, CURRENT_TIMESTAMP) ON CONFLICT (user_id) DO UPDATE SET last_feedback = CURRENT_TIMESTAMP",
                 (user_id,)
             )
             await self.conn.commit()
         return feedback_id
+
+    async def add_media(self, feedback_id: int, file_id: str, file_type: str, media_group_id: str | None = None):
+        """🔥 Додає файл до фідбеку"""
+        async with self.conn.cursor() as cur:
+            await cur.execute(
+                "INSERT INTO feedback_media (feedback_id, file_id, file_type, media_group_id) VALUES (%s, %s, %s, %s)",
+                (feedback_id, file_id, file_type, media_group_id)
+            )
+            await self.conn.commit()
+
+    async def get_feedback_media(self, feedback_id: int) -> list:
+        """🔥 Отримує всі файли для конкретного фідбеку"""
+        async with self.conn.cursor() as cur:
+            await cur.execute("SELECT * FROM feedback_media WHERE feedback_id = %s ORDER BY id ASC", (feedback_id,))
+            return await cur.fetchall()
 
     async def check_rate_limit(self, user_id: int) -> bool:
         async with self.conn.cursor() as cur:
@@ -82,41 +97,24 @@ class DB:
         return True
 
     async def get_stats(self, period: str) -> list:
-        """Отримати статистику за період: 'day', 'week', 'all'"""
         async with self.conn.cursor() as cur:
             if period == 'day':
-                query = '''
-                    SELECT category, COUNT(*) as count
-                    FROM feedbacks
-                    WHERE timestamp >= CURRENT_TIMESTAMP - INTERVAL '1 day'
-                    GROUP BY category
-                '''
+                query = "SELECT category, COUNT(*) as count FROM feedbacks WHERE timestamp >= CURRENT_TIMESTAMP - INTERVAL '1 day' GROUP BY category"
             elif period == 'week':
-                query = '''
-                    SELECT category, COUNT(*) as count
-                    FROM feedbacks
-                    WHERE timestamp >= CURRENT_TIMESTAMP - INTERVAL '7 days'
-                    GROUP BY category
-                '''
-            else:  # 'all'
-                query = '''
-                    SELECT category, COUNT(*) as count
-                    FROM feedbacks
-                    GROUP BY category
-                '''
+                query = "SELECT category, COUNT(*) as count FROM feedbacks WHERE timestamp >= CURRENT_TIMESTAMP - INTERVAL '7 days' GROUP BY category"
+            else:
+                query = "SELECT category, COUNT(*) as count FROM feedbacks GROUP BY category"
 
             await cur.execute(query)
             rows = await cur.fetchall()
             return [(row['category'], row['count']) for row in rows] if rows else []
 
     async def get_feedback(self, feedback_id: int) -> dict | None:
-        """Отримати feedback за ID"""
         async with self.conn.cursor() as cur:
             await cur.execute("SELECT * FROM feedbacks WHERE id = %s", (feedback_id,))
             return await cur.fetchone()
 
     async def add_reply(self, feedback_id: int, admin_id: int, reply_text: str) -> int:
-        """Додати відповідь адміна"""
         async with self.conn.cursor() as cur:
             await cur.execute(
                 "INSERT INTO replies (feedback_id, admin_id, reply_text) VALUES (%s, %s, %s) RETURNING id",
@@ -125,21 +123,5 @@ class DB:
             reply_id = (await cur.fetchone())["id"]
             await self.conn.commit()
         return reply_id
-
-    async def update_group_message_id(self, feedback_id: int, group_message_id: int) -> None:
-        """Оновити group_message_id для feedback"""
-        async with self.conn.cursor() as cur:
-            await cur.execute(
-                "UPDATE feedbacks SET group_message_id = %s WHERE id = %s",
-                (group_message_id, feedback_id)
-            )
-            await self.conn.commit()
-
-    async def get_feedback_by_group_message_id(self, group_message_id: int) -> dict | None:
-        """Отримати feedback за group_message_id (для reply в групі)"""
-        async with self.conn.cursor() as cur:
-            await cur.execute("SELECT * FROM feedbacks WHERE group_message_id = %s", (group_message_id,))
-            return await cur.fetchone()
-
 
 db = DB()
