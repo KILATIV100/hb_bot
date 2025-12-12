@@ -14,8 +14,8 @@ router = Router()
 @router.message(CommandStart())
 async def cmd_start(message: Message):
     welcome_text = (
-        "👋 **Привіт! Дімон на звʼязку!**\n\n"
-        "Це офіційний бот **XBrovary** 📰\n"
+        "👋 Привіт! Дімон на звʼязку!\n\n"
+        "Це офіційний бот XBrovary 📰\n"
         "Тут ти можеш поділитися новиною, замовити рекламу або просто написати нам.\n\n"
         "Натисни кнопку нижче, щоб почати!"
     )
@@ -24,7 +24,7 @@ async def cmd_start(message: Message):
 @router.message(F.text.in_(["▶️ СТАРТ", "▶️ РОЗПОЧАТИ"]))
 async def cmd_menu(message: Message):
     menu_text = (
-        "📋 **ГОЛОВНЕ МЕНЮ**\n\n"
+        "📋 ГОЛОВНЕ МЕНЮ\n\n"
         "Будь ласка, оберіть дію:"
     )
     await message.answer(menu_text, reply_markup=get_main_menu_kb())
@@ -42,8 +42,8 @@ async def back_to_menu(message: Message):
 @router.message(F.text == "ℹ️ Про нас")
 async def cmd_about(message: Message):
     about_text = (
-        "ℹ️ **Про бота**\n\n"
-        "Цей бот створено для зручного зв'язку з редакцією **XBrovary**.\n\n"
+        "ℹ️ Про бота\n\n"
+        "Цей бот створено для зручного зв'язку з редакцією XBrovary.\n\n"
         "Ми приймаємо:\n"
         "✅ Новини від підписників\n"
         "✅ Запити на рекламу\n"
@@ -55,14 +55,14 @@ async def cmd_about(message: Message):
 @router.message(F.text == "❓ Допомога")
 async def cmd_help_button(message: Message):
     help_text = (
-        "❓ **Як користуватись ботом?**\n\n"
+        "❓ Як користуватись ботом?\n\n"
         "<b>📰 Надіслати новину:</b>\n"
         "Натисни кнопку, напиши текст та прикріпи фото/відео. Ми переглянемо і опублікуємо.\n\n"
         "<b>📢 Реклама:</b>\n"
         "Маєш бізнес? Напиши нам пропозицію через кнопку реклами.\n\n"
         "<b>⚡️ Швидка відправка:</b>\n"
         "Ти можеш просто написати в цей чат або надіслати фото — бот автоматично передасть це адмінам у категорію «Інше».\n\n"
-        "⚠️ <i>Увага: працює антиспам (1 повідомлення на хвилину).</i>"
+        "⚠️ <i>Увага: працює антиспам (1 повідомлення на 10 секунд).</i>"
     )
     await message.answer(help_text, reply_markup=get_main_menu_kb())
 
@@ -71,14 +71,14 @@ async def cmd_help(message: Message):
     is_admin = message.from_user.id in settings.ADMIN_IDS
     
     help_text = (
-        "❓ **Довідка**\n\n"
+        "❓ Довідка\n\n"
         "• Використовуйте меню для навігації.\n"
         "• Ви можете надсилати текст, фото, відео та альбоми.\n"
     )
 
     if is_admin:
         help_text += (
-            "\n👮‍♂️ **АДМІН-ПАНЕЛЬ**\n"
+            "\n👮‍♂️ АДМІН-ПАНЕЛЬ\n"
             "-----------------------------\n"
             "<b>📸 Водяні знаки:</b>\n"
             "• Автоматично накладаються на ФОТО та ВІДЕО.\n"
@@ -98,9 +98,8 @@ async def cmd_help(message: Message):
     | F.photo | F.video | F.document
 )
 async def handle_direct_message(message: Message, bot: Bot, album: List[Message] = None):
-    """Ловить звичайні повідомлення (текст + медіа), написані прямо в боті"""
     if not await db.check_rate_limit(message.from_user.id):
-        await message.answer("🚫 Будь ласка, зачекай 1 хвилину перед наступною відправкою.")
+        await message.answer("⏳ Не так швидко! Зачекай 10 секунд.")
         return
 
     username = message.from_user.username or "Без імені"
@@ -120,6 +119,14 @@ async def handle_direct_message(message: Message, bot: Bot, album: List[Message]
         if message.photo: media_files.append({'file_id': message.photo[-1].file_id, 'type': 'photo'})
         elif message.video: media_files.append({'file_id': message.video.file_id, 'type': 'video'})
         elif message.document: media_files.append({'file_id': message.document.file_id, 'type': 'document'})
+
+    # ЧАТ-ФІЧА: Відповідь на Reply
+    reply_context = ""
+    if message.reply_to_message:
+        replied_text = message.reply_to_message.text or message.reply_to_message.caption or "[Медіа]"
+        if len(replied_text) > 50: replied_text = replied_text[:50] + "..."
+        reply_context = f"\n\n↩️ <b>Користувач відповів на:</b> <i>«{replied_text}»</i>"
+        content = f"{content}{reply_context}"
 
     feedback_id = await db.add_feedback(
         user_id=message.from_user.id, 
@@ -142,4 +149,4 @@ async def handle_direct_message(message: Message, bot: Bot, album: List[Message]
         is_anonymous=False
     )
 
-    await message.answer("✅ **Повідомлення отримано!** Дякуємо, що написали нам. ❤️", reply_markup=get_main_menu_kb())
+    await message.answer("✅ Повідомлення надіслано!", reply_markup=get_main_menu_kb())
