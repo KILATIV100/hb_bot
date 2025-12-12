@@ -1,3 +1,4 @@
+# utils/notify_admins.py
 import html
 from aiogram import Bot
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
@@ -32,9 +33,9 @@ async def notify_admins(
     
     emoji, label = category_labels.get(clean_category, ("📨", "Новий ЗАПИТ"))
 
-    # 🔥 БЕЗПЕКА: Екрануємо вхідні дані від користувача, щоб уникнути HTML-ін'єкцій
-    safe_username = html.quote(username)
-    safe_text = html.quote(text) if text else None
+    # 🔥 БЕЗПЕКА: Використовуємо html.escape замість неіснуючого html.quote
+    safe_username = html.escape(username)
+    safe_text = html.escape(text) if text else None
 
     if is_anonymous:
         user_info = f"{emoji} <b>{label} (👻 АНОНІМНО)</b>\n\n"
