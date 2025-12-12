@@ -3,4 +3,3 @@ pydantic-settings==2.5.2
 psycopg[pool,binary]==3.2.8
 python-dotenv==1.0.1
 Pillow==11.0.0
-cairosvg==2.7.1
