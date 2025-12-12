@@ -28,7 +28,7 @@ def convert_svg_to_png():
 
 
 def overlay_logo_on_image(image: Image.Image) -> Image.Image:
-    """Накладає логотип XBrovary на зображення з напівпрозорістю"""
+    """Накладає логотип XBrovary на зображення"""
     try:
         # Конвертуємо логотип один раз при запуску
         convert_svg_to_png()
@@ -39,17 +39,18 @@ def overlay_logo_on_image(image: Image.Image) -> Image.Image:
         # Завантажуємо логотип
         logo = Image.open(LOGO_PNG_PATH).convert("RGBA")
 
-        # Масштабуємо логотип залежно від розміру фото
-        # Логотип займає ~15% ширини фото
-        logo_width = max(80, int(image.width * 0.12))
+        # Масштабуємо логотип на 40% ширини фото
+        logo_width = int(image.width * 0.40)
         aspect_ratio = logo.height / logo.width
         logo_height = int(logo_width * aspect_ratio)
         logo = logo.resize((logo_width, logo_height), Image.Resampling.LANCZOS)
 
-        # Робимо логотип напівпрозорим
-        alpha = logo.split()[3]
-        alpha = alpha.point(lambda p: int(p * 0.5))  # 50% прозорість
-        logo.putalpha(alpha)
+        # Логотип БЕЗ прозорості (повна видимість)
+        # Якщо логотип має альфа-канал, робимо його напівпрозорим (30%)
+        if logo.mode == "RGBA":
+            alpha = logo.split()[3]
+            alpha = alpha.point(lambda p: int(p * 0.3))  # 30% прозорість
+            logo.putalpha(alpha)
 
         # Конвертуємо основне зображення в RGBA для накладання
         if image.mode != "RGBA":
