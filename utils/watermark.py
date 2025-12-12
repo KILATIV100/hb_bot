@@ -4,7 +4,7 @@ import asyncio
 import logging
 from PIL import Image, ImageEnhance
 
-# Налаштування логування
+# Налаштування логування (щоб бачити помилки в терміналі)
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
@@ -19,6 +19,7 @@ from config import settings
 video_processing_semaphore = asyncio.Semaphore(1)
 
 BASE_DIR = os.path.dirname(os.path.dirname(__file__))
+# ‼️ ВАЖЛИВО: Переконайтеся, що файл PNG, а не SVG
 LOGO_PNG_PATH = os.path.join(BASE_DIR, "assets", "xbrovary_logo.png")
 TEMP_DIR = os.path.join(BASE_DIR, "temp")
 
@@ -26,7 +27,7 @@ if not os.path.exists(TEMP_DIR):
     os.makedirs(TEMP_DIR)
 
 def create_pattern_layer(base_width: int, base_height: int) -> Image.Image:
-    """Створює шар-паттерн (сітку). Логотип 100% непрозорий."""
+    """Створює шар-паттерн (сітку) з логотипів"""
     try:
         if not os.path.exists(LOGO_PNG_PATH):
             logger.warning(f"Logo not found: {LOGO_PNG_PATH}")
@@ -35,7 +36,7 @@ def create_pattern_layer(base_width: int, base_height: int) -> Image.Image:
         logo = Image.open(LOGO_PNG_PATH).convert("RGBA")
         
         # --- НАЛАШТУВАННЯ ---
-        # 1. Розмір: 40% від ширини фото
+        # Розмір: 40% від ширини фото
         target_w = int(base_width * 0.40)
         if target_w < 50: target_w = 50
         
@@ -44,8 +45,10 @@ def create_pattern_layer(base_width: int, base_height: int) -> Image.Image:
         
         logo = logo.resize((target_w, target_h), Image.Resampling.LANCZOS)
         
-        # 2. Прозорість: МИ ПРИБРАЛИ ЗМЕНШЕННЯ ПРОЗОРОСТІ.
-        # Логотип залишається таким, яким він є в оригіналі.
+        # Прозорість: 0.7 (70%)
+        r, g, b, alpha = logo.split()
+        alpha = ImageEnhance.Brightness(alpha).enhance(0.7)
+        logo.putalpha(alpha)
         # ---------------------
 
         # Створюємо пустий прозорий шар
@@ -57,6 +60,7 @@ def create_pattern_layer(base_width: int, base_height: int) -> Image.Image:
         step_y = int(logo_h * 1.05)
 
         # Заповнюємо шар (Паттерн)
+        # Починаємо з мінуса, щоб перекрити краї
         start_x = -int(logo_w * 0.2)
         start_y = -int(logo_h * 0.2)
 
@@ -128,6 +132,10 @@ def process_video_sync(input_path: str, output_path: str):
         except: pass
 
 async def process_media_for_album(bot: Bot, file_id: str, file_type: str, use_watermark: bool = True):
+    """
+    Головна функція обробки.
+    Повертає InputMediaPhoto або InputMediaVideo.
+    """
     try:
         # --- ФОТО ---
         if file_type == 'photo':
@@ -136,10 +144,11 @@ async def process_media_for_album(bot: Bot, file_id: str, file_type: str, use_wa
                 file_data = await bot.download_file(file.file_path)
                 image = Image.open(io.BytesIO(file_data.read()))
                 
+                # Накладаємо водяний знак
                 processed_img = overlay_logo_on_image(image)
                 
                 output = io.BytesIO()
-                # Конвертуємо в RGB
+                # Конвертуємо в RGB для JPEG
                 if processed_img.mode == "RGBA":
                     background = Image.new("RGB", processed_img.size, (255, 255, 255))
                     background.paste(processed_img, mask=processed_img.split()[3])
@@ -172,13 +181,20 @@ async def process_media_for_album(bot: Bot, file_id: str, file_type: str, use_wa
                     except Exception as e:
                         logger.error(f"Video failed: {e}")
                     
+                    # Якщо файл не створився — повертаємо оригінал
                     return InputMediaVideo(media=file_id)
             else:
                 return InputMediaVideo(media=file_id)
         
+        # Інші типи файлів (документи тощо)
         return InputMediaPhoto(media=file_id)
 
     except Exception as e:
+        # 🔥 ОСЬ ТУТ БУЛА ПОМИЛКА, ТЕПЕР ВИПРАВЛЕНО
         logger.error(f"❌ CRITICAL ERROR in process_media_for_album: {e}")
-        if file_type == 'video': return InputMediaVideo(media=file_id)
-        return InputMediaPhoto(media=file_id)
+        
+        # Якщо сталася помилка — повертаємо оригінальний файл, щоб не губити контент
+        if file_type == 'video':
+            return InputMediaVideo(media=file_id)
+        else:
+            return InputMediaPhoto(media=file_id)
