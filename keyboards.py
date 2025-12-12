@@ -1,55 +1,37 @@
-# keyboards.py — ФІНАЛЬНА ВЕРСІЯ 2025
+# keyboards.py
 from aiogram.types import ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton
-
 
 def get_start_kb() -> ReplyKeyboardMarkup:
     """Клавіатура для першого запуску"""
     kb = ReplyKeyboardMarkup(
         keyboard=[
-            [KeyboardButton(text="▶️ СТАРТ")]
+            [KeyboardButton(text="▶️ РОЗПОЧАТИ")]
         ],
         resize_keyboard=True,
         one_time_keyboard=True
     )
     return kb
 
-
 def get_main_menu_kb() -> ReplyKeyboardMarkup:
     kb = ReplyKeyboardMarkup(
         keyboard=[
-            [KeyboardButton(text="📰 Надіслати новину"), KeyboardButton(text="📢 Запит про рекламу")],
-            [KeyboardButton(text="💬 Інше повідомлення")],
-            [KeyboardButton(text="ℹ️ Про бот"), KeyboardButton(text="❓ Допомога")]
+            [KeyboardButton(text="📰 Надіслати новину"), KeyboardButton(text="📢 Щодо реклами")],
+            [KeyboardButton(text="💬 Зворотний зв'язок")], # Звучить краще, ніж "Інше"
+            [KeyboardButton(text="ℹ️ Про нас"), KeyboardButton(text="❓ Допомога")]
         ],
         resize_keyboard=True,
         one_time_keyboard=False
     )
     return kb
 
-
 def get_confirm_kb() -> InlineKeyboardMarkup:
     kb = InlineKeyboardMarkup(inline_keyboard=[
         [
-            InlineKeyboardButton(text="Відправити", callback_data="confirm_send"),
-            InlineKeyboardButton(text="Скасувати", callback_data="cancel_send")
-        ]
-    ])
-    return kb
-
-
-def get_edit_kb() -> InlineKeyboardMarkup:
-    """Клавіатура для редагування перед відправкою"""
-    kb = InlineKeyboardMarkup(inline_keyboard=[
-        [
-            InlineKeyboardButton(text="✏️ Редагувати", callback_data="edit_message"),
-            InlineKeyboardButton(text="✅ Відправити", callback_data="confirm_send")
-        ],
-        [
+            InlineKeyboardButton(text="✅ Відправити", callback_data="confirm_send"),
             InlineKeyboardButton(text="❌ Скасувати", callback_data="cancel_send")
         ]
     ])
     return kb
-
 
 def get_quick_replies_kb() -> InlineKeyboardMarkup:
     """Клавіатура з готовими відповідями для адмінів"""
