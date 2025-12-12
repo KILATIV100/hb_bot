@@ -1,7 +1,7 @@
 # handlers/start.py
 from aiogram import Router, F, Bot
 from aiogram.types import Message
-from aiogram.filters import CommandStart, Command
+from aiogram.filters import CommandStart, Command, StateFilter
 from aiogram.fsm.context import FSMContext
 from keyboards import get_main_menu_kb, get_start_kb
 from config import settings
@@ -90,20 +90,46 @@ async def cmd_help(message: Message):
     )
     await message.answer(help_text, reply_markup=get_main_menu_kb())
 
-# Обробник для прямих текстових повідомлень (без меню)
-@router.message(F.text,
-               ~F.text.in_(["📰 Надіслати новину", "📢 Запит про рекламу", "💬 Інше повідомлення",
+# Обробник для прямих повідомлень (текст ТА медіа)
+# Працює тільки якщо користувач НЕ в стані діалогу (StateFilter(None))
+@router.message(
+    StateFilter(None),
+    (F.text & ~F.text.in_(["📰 Надіслати новину", "📢 Запит про рекламу", "💬 Інше повідомлення",
                            "ℹ️ Про бот", "❓ Допомога", "меню", "головне меню", "назад", "▶️ СТАРТ"]))
+    | F.photo | F.video | F.document
+)
 async def handle_direct_message(message: Message, bot: Bot):
-    """Ловить звичайні текстові повідомлення, написані прямо в боті"""
+    """Ловить звичайні повідомлення (текст + медіа), написані прямо в боті"""
     if not await db.check_rate_limit(message.from_user.id):
         await message.answer("Зачекай 1 хвилину перед наступною відправкою 🚫")
         return
 
     username = message.from_user.username or "Без імені"
+    content = message.text or message.caption or "Без тексту"
+
+    # Визначаємо тип медіа та file_id
+    photo_file_id = None
+    video_file_id = None
+    document_file_id = None
+
+    if message.photo:
+        # message.photo це список, беремо останній (найкраща якість)
+        photo_file_id = message.photo[-1].file_id
+    elif message.video:
+        video_file_id = message.video.file_id
+    elif message.document:
+        document_file_id = message.document.file_id
 
     # Додаємо feedback як "інше"
-    feedback_id = await db.add_feedback(message.from_user.id, username, "інше", message.text)
+    feedback_id = await db.add_feedback(
+        user_id=message.from_user.id, 
+        username=username, 
+        category="інше", 
+        content=content,
+        photo_file_id=photo_file_id,
+        video_file_id=video_file_id,
+        document_file_id=document_file_id
+    )
 
     # Відправляємо адмінам
     await notify_admins(
@@ -112,7 +138,10 @@ async def handle_direct_message(message: Message, bot: Bot):
         username=username,
         category="інше",
         feedback_id=feedback_id,
-        text=message.text,
+        text=content,
+        photo=message.photo[-1].file_id if message.photo else None,
+        video=message.video.file_id if message.video else None,
+        document=message.document.file_id if message.document else None,
         is_anonymous=False
     )
 
