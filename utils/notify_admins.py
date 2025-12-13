@@ -17,9 +17,12 @@ async def notify_admins(
     photo=None,
     document=None,
     video=None,
+    media_files: list = None,
     is_anonymous: bool = False,
 ) -> None:
     """Надсилає повідомлення всім адмінам в приватні чати з кнопками"""
+    from aiogram.types import InputMediaPhoto, InputMediaVideo, InputMediaDocument
+
     username = username or "Без юзернейму"
 
     category_labels = {
@@ -51,7 +54,32 @@ async def notify_admins(
 
     for admin_id in settings.ADMIN_IDS:
         try:
-            if photo:
+            # Якщо є альбом медіа файлів
+            if media_files and len(media_files) > 0:
+                media_group = []
+                for i, m in enumerate(media_files):
+                    if m['type'] == 'photo':
+                        media = InputMediaPhoto(media=m['file_id'])
+                    elif m['type'] == 'video':
+                        media = InputMediaVideo(media=m['file_id'])
+                    elif m['type'] == 'document':
+                        media = InputMediaDocument(media=m['file_id'])
+                    else:
+                        continue
+
+                    # Caption тільки на перший файл
+                    if i == 0:
+                        media.caption = user_info
+                        media.parse_mode = ParseMode.HTML
+
+                    media_group.append(media)
+
+                await bot.send_media_group(admin_id, media=media_group)
+                # Кнопки окремим повідомленням
+                if admin_kb:
+                    await bot.send_message(admin_id, "⬆️ Дії з повідомленням:", reply_markup=admin_kb)
+            # Старий формат (один файл)
+            elif photo:
                 await bot.send_photo(admin_id, photo[-1].file_id, caption=user_info,
                                    parse_mode=ParseMode.HTML, reply_markup=admin_kb)
             elif document:
