@@ -61,6 +61,15 @@ class DB:
                         timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                     )
                 ''')
+                await cur.execute('''
+                    CREATE TABLE IF NOT EXISTS media (
+                        id SERIAL PRIMARY KEY,
+                        feedback_id INT REFERENCES feedbacks(id) ON DELETE CASCADE,
+                        file_id TEXT NOT NULL,
+                        file_type TEXT NOT NULL,
+                        timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    )
+                ''')
                 # Перевірка та додавання колонок, якщо їх немає (міграції на льоту)
                 for col in ['photo_file_id', 'video_file_id', 'document_file_id']:
                     await cur.execute(f'''
@@ -94,20 +103,23 @@ class DB:
 
     async def check_rate_limit(self, user_id: int) -> bool:
         """Повертає True, якщо можна писати. False, якщо треба чекати."""
-        async with self.pool.connection() as conn:
-            async with conn.cursor() as cur:
-                await cur.execute("SELECT last_feedback FROM rate_limits WHERE user_id = %s", (user_id,))
-                row = await cur.fetchone()
-                if row:
-                    last_time = row["last_feedback"]
-                    # Якщо база повертає naive datetime, вважаємо це UTC
-                    if last_time.tzinfo is None:
-                        last_time = last_time.replace(tzinfo=timezone.utc)
-                    
-                    diff = (datetime.now(timezone.utc) - last_time).total_seconds()
-                    if diff < 60:
-                        return False
+        # АНТИСПАМ ВИМКНЕНО - завжди повертає True
         return True
+
+        # async with self.pool.connection() as conn:
+        #     async with conn.cursor() as cur:
+        #         await cur.execute("SELECT last_feedback FROM rate_limits WHERE user_id = %s", (user_id,))
+        #         row = await cur.fetchone()
+        #         if row:
+        #             last_time = row["last_feedback"]
+        #             # Якщо база повертає naive datetime, вважаємо це UTC
+        #             if last_time.tzinfo is None:
+        #                 last_time = last_time.replace(tzinfo=timezone.utc)
+        #
+        #             diff = (datetime.now(timezone.utc) - last_time).total_seconds()
+        #             if diff < 60:
+        #                 return False
+        # return True
 
     async def get_stats(self, period: str) -> list:
         async with self.pool.connection() as conn:
@@ -152,5 +164,38 @@ class DB:
             async with conn.cursor() as cur:
                 await cur.execute("SELECT * FROM feedbacks WHERE group_message_id = %s", (group_message_id,))
                 return await cur.fetchone()
+
+    async def add_media(self, feedback_id: int, file_id: str, file_type: str) -> int:
+        """Додає медіа файл до feedback"""
+        async with self.pool.connection() as conn:
+            async with conn.cursor() as cur:
+                await cur.execute(
+                    "INSERT INTO media (feedback_id, file_id, file_type) VALUES (%s, %s, %s) RETURNING id",
+                    (feedback_id, file_id, file_type)
+                )
+                media_id = (await cur.fetchone())["id"]
+        return media_id
+
+    async def get_feedback_media(self, feedback_id: int) -> list:
+        """Повертає всі медіа файли для feedback"""
+        async with self.pool.connection() as conn:
+            async with conn.cursor() as cur:
+                await cur.execute(
+                    "SELECT file_id, file_type FROM media WHERE feedback_id = %s ORDER BY id",
+                    (feedback_id,)
+                )
+                rows = await cur.fetchall()
+                return [{'file_id': row['file_id'], 'file_type': row['file_type']} for row in rows] if rows else []
+
+    async def get_last_feedback_id(self, user_id: int) -> int | None:
+        """Повертає ID останнього feedback від користувача"""
+        async with self.pool.connection() as conn:
+            async with conn.cursor() as cur:
+                await cur.execute(
+                    "SELECT id FROM feedbacks WHERE user_id = %s ORDER BY timestamp DESC LIMIT 1",
+                    (user_id,)
+                )
+                row = await cur.fetchone()
+                return row["id"] if row else None
 
 db = DB()
