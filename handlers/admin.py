@@ -22,6 +22,108 @@ async def handle_publish(callback: CallbackQuery, bot: Bot):
     action, feedback_id = callback.data.split("_")[1], callback.data.split("_")[2]
     feedback_id = int(feedback_id)
     
+    if not match:
+        return
+
+    target_user_id = int(match.group(1))
+    
+    try:
+        await message.bot.send_message(
+            target_user_id, 
+            f"📬 <b>Відповідь від адміністратора:</b>\n\n{message.text}", 
+            parse_mode=ParseMode.HTML
+        )
+        await message.answer(f"✅ Відповідь надіслана користувачу (ID: {target_user_id})!")
+
+        last_feedback_id = await db.get_last_feedback_id(target_user_id)
+        if last_feedback_id:
+            await db.add_reply(last_feedback_id, message.from_user.id, message.text)
+
+    except Exception as e:
+        await message.answer(f"❌ Не вдалося надіслати відповідь: {e}")
+
+# --- АДМІНСЬКІ КОМАНДИ ---
+
+@admin_router.message(Command('stats'))
+async def cmd_stats(message: Message):
+    if message.from_user.id not in settings.ADMIN_IDS: return
+
+    stats_day = await db.get_stats('day')
+    stats_week = await db.get_stats('week')
+    stats_all = await db.get_stats('all')
+
+    day_str = "\n".join([f"{cat}: {count}" for cat, count in stats_day]) if stats_day else "Нема даних"
+    week_str = "\n".join([f"{cat}: {count}" for cat, count in stats_week]) if stats_week else "Нема даних"
+    all_str = "\n".join([f"{cat}: {count}" for cat, count in stats_all]) if stats_all else "Нема даних"
+
+    response = (
+        f"📊 Статистика бота:\n\n"
+        f"📅 За сьогодні:\n{day_str}\n\n"
+        f"🗓 За тиждень:\n{week_str}\n\n"
+        f"📈 За весь час:\n{all_str}"
+    )
+    await message.answer(response, parse_mode=ParseMode.MARKDOWN)
+
+@admin_router.message(Command('news'))
+async def cmd_news_filter(message: Message):
+    if message.from_user.id not in settings.ADMIN_IDS: return
+    async with db.pool.connection() as conn:
+        async with conn.cursor() as cur:
+            await cur.execute("SELECT id, username, content, timestamp FROM feedbacks WHERE category = 'новина' ORDER BY timestamp DESC LIMIT 20")
+            rows = await cur.fetchall()
+
+    if not rows:
+        await message.answer("📰 Немає новин")
+        return
+
+    text = "📰 <b>ОСТАННІ НОВИНИ (макс 20):</b>\n\n"
+    for row in rows:
+        text += f"ID {row['id']} | @{row['username']}\n{row['content'][:100]}...\n\n"
+    await message.answer(text)
+
+@admin_router.message(Command('ads'))
+async def cmd_ads_filter(message: Message):
+    if message.from_user.id not in settings.ADMIN_IDS: return
+    async with db.pool.connection() as conn:
+        async with conn.cursor() as cur:
+            await cur.execute("SELECT id, username, content, timestamp FROM feedbacks WHERE category = 'реклама' ORDER BY timestamp DESC LIMIT 20")
+            rows = await cur.fetchall()
+
+    if not rows:
+        await message.answer("📢 Немає реклам")
+        return
+
+    text = "📢 <b>ОСТАННЯ РЕКЛАМА (макс 20):</b>\n\n"
+    for row in rows:
+        text += f"ID {row['id']} | @{row['username']}\n{row['content'][:100]}...\n\n"
+    await message.answer(text)
+
+@admin_router.message(Command('other'))
+async def cmd_other_filter(message: Message):
+    if message.from_user.id not in settings.ADMIN_IDS: return
+    async with db.pool.connection() as conn:
+        async with conn.cursor() as cur:
+            await cur.execute("SELECT id, username, content, timestamp FROM feedbacks WHERE category = 'інше' ORDER BY timestamp DESC LIMIT 20")
+            rows = await cur.fetchall()
+
+    if not rows:
+        await message.answer("💬 Немає інших повідомлень")
+        return
+
+    text = "💬 <b>ІНШІ ПОВІДОМЛЕННЯ (макс 20):</b>\n\n"
+    for row in rows:
+        text += f"ID {row['id']} | @{row['username']}\n{row['content'][:100]}...\n\n"
+    await message.answer(text)
+
+# --- CALLBACKS ---
+
+@admin_router.callback_query(F.data.startswith("reply_to_"))
+async def reply_to_feedback(callback: CallbackQuery, state: FSMContext):
+    if callback.from_user.id not in settings.ADMIN_IDS:
+        await callback.answer("Тільки для адмінів! 🚫", show_alert=True)
+        return
+
+    feedback_id = int(callback.data.replace("reply_to_", ""))
     # Отримуємо дані з БД
     feedback = await db.get_feedback(feedback_id)
     if not feedback:
