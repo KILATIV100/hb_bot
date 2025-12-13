@@ -2,8 +2,6 @@
 import asyncio
 import logging
 import sys
-import os
-import shutil
 from aiogram import Bot, Dispatcher
 from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.client.default import DefaultBotProperties
@@ -19,45 +17,37 @@ from handlers.ad import router as ad_router
 from handlers.other import router as other_router
 from handlers.admin import admin_router
 
-# 👇 Імпортуємо наш новий Middleware
-from utils.album_middleware import AlbumMiddleware
-
-async def init_db():
-    await db.connect()
-    await db.create_tables()
-
-def clean_temp_folder():
-    base_dir = os.path.dirname(__file__)
-    temp_dir = os.path.join(base_dir, "temp") # або utils/temp залежно від налаштувань
-    if os.path.exists(temp_dir):
-        try:
-            shutil.rmtree(temp_dir)
-        except Exception:
-            pass
-    os.makedirs(temp_dir, exist_ok=True)
-
 async def main():
+    # Налаштування логування
     logging.basicConfig(level=logging.INFO, stream=sys.stdout)
-    await init_db()
-    clean_temp_folder()
+    
+    # Підключення до БД
+    await db.connect()
 
     bot = Bot(
         token=settings.BOT_TOKEN,
         default=DefaultBotProperties(parse_mode=ParseMode.HTML)
     )
     dp = Dispatcher(storage=MemoryStorage())
-
-    # 👇 ПІДКЛЮЧАЄМО MIDDLEWARE ТУТ
-    # Воно буде працювати для всіх повідомлень
-    dp.message.middleware(AlbumMiddleware(latency=0.5))
-
+    
+    # Реєстрація роутерів
     dp.include_routers(admin_router, start_router, news_router, ad_router, other_router)
 
-    print("🚀 Бот запущено з підтримкою альбомів!")
-    await dp.start_polling(bot)
+    # Очищення вебхуків та очікуваних апдейтів перед запуском
+    # Це допомагає уникнути конфліктів при перезапуску
+    await bot.delete_webhook(drop_pending_updates=True)
+
+    print("🚀 Бот успішно запущений! Старі сесії очищено.")
+    
+    try:
+        await dp.start_polling(bot)
+    except Exception as e:
+        print(f"❌ Помилка при polling: {e}")
+    finally:
+        await bot.session.close()
 
 if __name__ == "__main__":
     try:
         asyncio.run(main())
     except KeyboardInterrupt:
-        print("🛑 Бот зупинений")
+        print("🛑 Бот зупинено користувачем")
