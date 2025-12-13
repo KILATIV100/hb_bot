@@ -1,38 +1,26 @@
 # handlers/admin.py
-import re
-from aiogram import Router, F
-from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
-from aiogram.filters import Command
+from aiogram import Router, F, Bot
+from aiogram.types import CallbackQuery, Message, InputMediaPhoto, InputMediaVideo
 from aiogram.fsm.context import FSMContext
-from aiogram.enums import ParseMode
-from states.feedback_states import AdminStates
-from keyboards import get_quick_replies_kb
-from config import settings
+from aiogram.enums import ChatAction
 from database.db import db
-# 🔥 ВИПРАВЛЕНИЙ ІМПОРТ
+from config import settings
 from utils.watermark import process_media_for_album
+from states.feedback_states import AdminStates
 
-admin_router = Router()
+router = Router()
 
-# Словник з готовими відповідями
-QUICK_REPLIES = {
-    "quick_reply_published": "✅ Супер! Ваша новина вже опублікована на каналі. Дякуємо!",
-    "quick_reply_review": "⏳ Ваше повідомлення отримано. Адміністратори розглядають його.",
-    "quick_reply_rejected": "❌ Дякуємо за ваш час, але новина не відповідає критеріям нашого каналу.",
-    "quick_reply_clarify": "❓ Дякуємо. Просимо уточнити деталі або джерело інформації.",
-}
+# --- ПУБЛІКАЦІЯ ---
 
-# --- 🔥 ВІДПОВІДЬ СВАЙПОМ ---
-@admin_router.message(F.reply_to_message & F.from_user.id.in_(settings.ADMIN_IDS))
-async def admin_reply_by_swipe(message: Message):
+@router.callback_query(F.data.startswith("pub_"))
+async def handle_publish(callback: CallbackQuery, bot: Bot):
     """
-    Дозволяє адміну відповісти користувачеві свайпом.
+    Обробляє обидві кнопки публікації:
+    pub_wm_ID   -> З водяним знаком
+    pub_orig_ID -> Без водяного знаку (оригінал)
     """
-    replied_msg = message.reply_to_message
-    origin_text = replied_msg.text or replied_msg.caption or ""
-
-    # Шукаємо ID
-    match = re.search(r"\(ID:\s*(\d+)\)", origin_text)
+    action, feedback_id = callback.data.split("_")[1], callback.data.split("_")[2]
+    feedback_id = int(feedback_id)
     
     if not match:
         return
@@ -136,144 +124,99 @@ async def reply_to_feedback(callback: CallbackQuery, state: FSMContext):
         return
 
     feedback_id = int(callback.data.replace("reply_to_", ""))
+    # Отримуємо дані з БД
     feedback = await db.get_feedback(feedback_id)
-
     if not feedback:
-        await callback.answer("Feedback не знайдено!", show_alert=True)
+        await callback.answer("❌ Заявку не знайдено в БД", show_alert=True)
         return
 
-    await state.set_state(AdminStates.replying)
-    await state.update_data(feedback_id=feedback_id, replying_to=feedback["user_id"], username=feedback["username"])
+    # Відправляємо статус "uploading...", бо це може зайняти час
+    # (Це вирішує п.4 - адмін бачить, що процес іде)
+    await bot.send_chat_action(chat_id=callback.message.chat.id, action=ChatAction.UPLOAD_PHOTO)
 
-    await callback.message.answer(
-        f"💬 <b>Відповідь для @{feedback['username']}</b>\n\n"
-        f"📝 Його повідомлення: <code>{feedback['content']}</code>\n\n"
-        f"Обери готову відповідь або напиши свою:",
-        reply_markup=get_quick_replies_kb()
-    )
-    await callback.answer()
+    content = feedback["content"]
+    # Якщо контент "Без тексту", прибираємо його для каналу, або лишаємо пустим
+    caption_text = content if content != "Без тексту" else ""
 
-@admin_router.callback_query(F.data.startswith("publish_to_"))
-async def publish_to_channel(callback: CallbackQuery):
-    if callback.from_user.id not in settings.ADMIN_IDS:
-        await callback.answer("Тільки для адмінів! 🚫", show_alert=True)
-        return
-
-    feedback_id = int(callback.data.replace("publish_to_", ""))
-    feedback = await db.get_feedback(feedback_id)
-
-    if not feedback:
-        await callback.answer("Feedback не знайдено!", show_alert=True)
-        return
-
-    # Перевіряємо наявність медіа
-    media_files = await db.get_feedback_media(feedback_id)
-
-    if media_files:
-        wm_kb = InlineKeyboardMarkup(inline_keyboard=[
-            [
-                InlineKeyboardButton(text="✅ З вотермаркою (Всі)", callback_data=f"pub_wm_{feedback_id}"),
-                InlineKeyboardButton(text="❌ Без вотермарки", callback_data=f"pub_nowm_{feedback_id}")
-            ]
-        ])
-        await callback.message.answer(f"📸 Файлів в альбомі: {len(media_files)}. Додати логотип на всі?", reply_markup=wm_kb)
-        await callback.answer()
-    else:
-        # Просто текст
-        await do_publish_feedback(callback, feedback_id, feedback, use_watermark=False)
-
-@admin_router.callback_query(F.data.startswith("pub_wm_"))
-async def publish_with_watermark(callback: CallbackQuery):
-    if callback.from_user.id not in settings.ADMIN_IDS: return
-    feedback_id = int(callback.data.replace("pub_wm_", ""))
-    feedback = await db.get_feedback(feedback_id)
-    if feedback: 
-        await callback.message.answer("⏳ Обробка альбому... Це може зайняти час.")
-        await do_publish_feedback(callback, feedback_id, feedback, use_watermark=True)
-
-@admin_router.callback_query(F.data.startswith("pub_nowm_"))
-async def publish_without_watermark(callback: CallbackQuery):
-    if callback.from_user.id not in settings.ADMIN_IDS: return
-    feedback_id = int(callback.data.replace("pub_nowm_", ""))
-    feedback = await db.get_feedback(feedback_id)
-    if feedback: await do_publish_feedback(callback, feedback_id, feedback, use_watermark=False)
-
-async def do_publish_feedback(callback: CallbackQuery, feedback_id: int, feedback: dict, use_watermark: bool):
-    bot = callback.bot
-    publish_text = f"#нампишуть\n\n{feedback['content']}"
+    # Отримуємо медіафайли
+    media_records = await db.get_feedback_media(feedback_id)
     
-    media_files = await db.get_feedback_media(feedback_id)
-
     try:
-        if not media_files:
+        if not media_records:
             # Тільки текст
-            await bot.send_message(settings.CHANNEL_ID, publish_text, parse_mode=ParseMode.HTML)
+            await bot.send_message(settings.CHANNEL_ID, caption_text)
         else:
-            # АЛЬБОМ
+            # Формуємо альбом
             media_group = []
-            for i, m in enumerate(media_files):
-                # Обробка кожного файлу
+            
+            # Визначаємо, чи потрібна вотермарка
+            use_wm = (action == "wm") # True якщо натиснули "З водяним"
+
+            for i, file_info in enumerate(media_records):
+                # Викликаємо функцію з utils/watermark.py
+                # Вона сама вирішить: качати і обробляти (якщо use_wm=True)
+                # чи просто повернути file_id (якщо use_wm=False)
                 input_media = await process_media_for_album(
-                    bot, m['file_id'], m['file_type'], use_watermark
+                    bot=bot,
+                    file_id=file_info['file_id'],
+                    file_type=file_info['file_type'],
+                    use_watermark=use_wm 
                 )
                 
-                # Підпис тільки до першого
-                if i == 0:
-                    input_media.caption = publish_text
-                    input_media.parse_mode = ParseMode.HTML
-                
+                # Підпис тільки до першого файлу
+                if i == 0 and caption_text:
+                    input_media.caption = caption_text
+
                 media_group.append(input_media)
 
+            # Відправляємо в канал
             await bot.send_media_group(settings.CHANNEL_ID, media=media_group)
 
-        await callback.answer("✅ Опубліковано на канал!", show_alert=True)
-        await callback.message.edit_text(callback.message.text + "\n\n✅ <b>ОПУБЛІКОВАНО НА КАНАЛ</b>")
+        # Оновлюємо повідомлення у адміна
+        status = "✅ Опубліковано з лого" if action == "wm" else "🚀 Опубліковано оригінал"
+        await callback.message.edit_reply_markup(reply_markup=None)
+        await callback.message.answer(status)
+        
     except Exception as e:
-        await callback.message.answer(f"❌ Помилка при публікації: {e}")
+        await callback.answer(f"Помилка: {e}", show_alert=True)
         print(f"Publish error: {e}")
 
-@admin_router.callback_query(F.data.startswith("quick_reply_"))
-async def quick_reply(callback: CallbackQuery, state: FSMContext):
-    if callback.from_user.id not in settings.ADMIN_IDS: return
-    data = await state.get_data()
-    feedback_id = data.get("feedback_id")
-    user_id = data.get("replying_to")
-    if not user_id or not feedback_id:
-        await callback.answer("Помилка даних", show_alert=True)
-        return
-
-    reply_type = callback.data
-    if reply_type == "quick_reply_custom":
-        await callback.message.answer("💬 Напиши свою відповідь для користувача:")
-        await callback.answer()
-        return
-
-    reply_text = QUICK_REPLIES.get(reply_type, "Error")
-    await db.add_reply(feedback_id, callback.from_user.id, reply_text)
-    try:
-        await callback.bot.send_message(user_id, f"📬 <b>Адмін відповив:</b>\n\n{reply_text}", parse_mode=ParseMode.HTML)
-        await callback.message.answer("✅ Відповідь надіслана!")
-    except Exception as e:
-        await callback.message.answer(f"❌ Помилка: {e}")
-    await state.clear()
     await callback.answer()
 
-@admin_router.message(F.text, AdminStates.replying)
-async def send_custom_reply(message: Message, state: FSMContext):
-    if message.from_user.id not in settings.ADMIN_IDS: return
+# --- ВІДПОВІДЬ КОРИСТУВАЧУ ---
+
+@router.callback_query(F.data.startswith("reply_to_"))
+async def start_reply(callback: CallbackQuery, state: FSMContext):
+    feedback_id = int(callback.data.split("_")[2])
+    await state.update_data(current_feedback_id=feedback_id)
+    await state.set_state(AdminStates.replying)
+    await callback.message.answer("✍️ Напишіть текст відповіді для користувача:")
+    await callback.answer()
+
+@router.message(AdminStates.replying)
+async def send_reply(message: Message, state: FSMContext, bot: Bot):
     data = await state.get_data()
-    feedback_id = data.get("feedback_id")
-    user_id = data.get("replying_to")
-    if not user_id: return
-    await db.add_reply(feedback_id, message.from_user.id, message.text)
-    try:
-        await message.bot.send_message(user_id, f"📬 <b>Адмін відповив:</b>\n\n{message.text}", parse_mode=ParseMode.HTML)
-        await message.answer("✅ Відповідь надіслана!")
-    except Exception as e:
-        await message.answer(f"❌ Помилка: {e}")
+    feedback_id = data.get("current_feedback_id")
+    
+    feedback = await db.get_feedback(feedback_id)
+    if feedback:
+        user_id = feedback["user_id"]
+        try:
+            await bot.send_message(
+                user_id, 
+                f"🔔 <b>Відповідь від адміністратора:</b>\n\n{message.text}",
+                parse_mode="HTML"
+            )
+            await message.answer("✅ Відповідь надіслано!")
+            await db.add_reply(feedback_id, message.from_user.id, message.text)
+        except Exception as e:
+            await message.answer(f"❌ Не вдалося надіслати (можливо, бот заблокований): {e}")
+    
     await state.clear()
 
-# --- ⛔️ БЛОКУВАННЯ СПАМУ ВІД АДМІНІВ ⛔️ ---
-@admin_router.message(F.from_user.id.in_(settings.ADMIN_IDS))
-async def admin_prevent_spam(message: Message):
-    pass
+# --- ВІДХИЛЕННЯ ---
+
+@router.callback_query(F.data.startswith("reject_"))
+async def reject_post(callback: CallbackQuery):
+    await callback.message.edit_text(f"{callback.message.text}\n\n❌ <b>ВІДХИЛЕНО</b>", parse_mode="HTML", reply_markup=None)
+    await callback.answer("Відхилено")
