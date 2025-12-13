@@ -1,4 +1,3 @@
-# main.py
 import asyncio
 import logging
 import sys
@@ -18,36 +17,54 @@ from handlers.other import router as other_router
 from handlers.admin import admin_router
 
 async def main():
-    # Налаштування логування
-    logging.basicConfig(level=logging.INFO, stream=sys.stdout)
-    
+    # Налаштування логування: додаємо час і рівень важливості
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s - %(levelname)s - %(name)s - %(message)s",
+        stream=sys.stdout
+    )
+    logger = logging.getLogger(__name__)
+
+    logger.info("🚀 Ініціалізація бота...")
+
     # Підключення до БД
-    await db.connect()
+    try:
+        await db.connect()
+    except Exception as e:
+        logger.critical(f"❌ Критична помилка підключення до БД: {e}")
+        # Без бази бот не має сенсу, тому зупиняємо
+        return
 
     bot = Bot(
         token=settings.BOT_TOKEN,
         default=DefaultBotProperties(parse_mode=ParseMode.HTML)
     )
+
     dp = Dispatcher(storage=MemoryStorage())
-    
-    # Реєстрація роутерів
+
+    # Підключення роутерів (порядок важливий!)
+    # Спочатку admin (щоб перехоплювати команди адміна), потім інші
     dp.include_routers(admin_router, start_router, news_router, ad_router, other_router)
 
-    # Очищення вебхуків та очікуваних апдейтів перед запуском
-    # Це допомагає уникнути конфліктів при перезапуску
+    logger.info("🗑️ Очищення черги старих оновлень...")
+    # Це критично важливо, якщо бот довго не працював або "завис"
     await bot.delete_webhook(drop_pending_updates=True)
 
-    print("🚀 Бот успішно запущений! Старі сесії очищено.")
-    
+    logger.info("✅ Бот запущений! Очікую повідомлень...")
+
     try:
         await dp.start_polling(bot)
     except Exception as e:
-        print(f"❌ Помилка при polling: {e}")
+        logger.error(f"❌ Помилка в процесі роботи (polling): {e}")
     finally:
-        await bot.session.close()
+        # Коректне завершення роботи
+        if hasattr(db, 'pool') and db.pool:
+            await db.pool.close()
+            logger.info("🛑 З'єднання з БД закрито.")
+        logger.info("👋 Бот зупинений.")
 
 if __name__ == "__main__":
     try:
         asyncio.run(main())
     except KeyboardInterrupt:
-        print("🛑 Бот зупинено користувачем")
+        print("Бот вимкнений вручну (Ctrl+C)")
