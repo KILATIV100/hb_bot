@@ -16,6 +16,9 @@ from handlers.ad import router as ad_router
 from handlers.other import router as other_router
 from handlers.admin import admin_router
 
+# Middleware
+from utils.album_middleware import AlbumMiddleware
+
 async def main():
     # Налаштування логування: додаємо час і рівень важливості
     logging.basicConfig(
@@ -53,6 +56,13 @@ async def main():
     )
 
     dp = Dispatcher(storage=MemoryStorage())
+
+    # Підключення AlbumMiddleware для обробки медіа-груп
+    album_middleware = AlbumMiddleware(latency=0.5)
+    news_router.message.middleware(album_middleware)
+    ad_router.message.middleware(album_middleware)
+    other_router.message.middleware(album_middleware)
+    logger.info("📦 AlbumMiddleware підключено")
 
     # Підключення роутерів (порядок важливий!)
     # Спочатку admin (щоб перехоплювати команди адміна), потім інші
