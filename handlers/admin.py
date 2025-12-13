@@ -79,9 +79,10 @@ async def cmd_stats(message: Message):
 @admin_router.message(Command('news'))
 async def cmd_news_filter(message: Message):
     if message.from_user.id not in settings.ADMIN_IDS: return
-    async with db.conn.cursor() as cur:
-        await cur.execute("SELECT id, username, content, timestamp FROM feedbacks WHERE category = 'новина' ORDER BY timestamp DESC LIMIT 20")
-        rows = await cur.fetchall()
+    async with db.pool.connection() as conn:
+        async with conn.cursor() as cur:
+            await cur.execute("SELECT id, username, content, timestamp FROM feedbacks WHERE category = 'новина' ORDER BY timestamp DESC LIMIT 20")
+            rows = await cur.fetchall()
 
     if not rows:
         await message.answer("📰 Немає новин")
@@ -95,9 +96,10 @@ async def cmd_news_filter(message: Message):
 @admin_router.message(Command('ads'))
 async def cmd_ads_filter(message: Message):
     if message.from_user.id not in settings.ADMIN_IDS: return
-    async with db.conn.cursor() as cur:
-        await cur.execute("SELECT id, username, content, timestamp FROM feedbacks WHERE category = 'реклама' ORDER BY timestamp DESC LIMIT 20")
-        rows = await cur.fetchall()
+    async with db.pool.connection() as conn:
+        async with conn.cursor() as cur:
+            await cur.execute("SELECT id, username, content, timestamp FROM feedbacks WHERE category = 'реклама' ORDER BY timestamp DESC LIMIT 20")
+            rows = await cur.fetchall()
 
     if not rows:
         await message.answer("📢 Немає реклам")
@@ -111,9 +113,10 @@ async def cmd_ads_filter(message: Message):
 @admin_router.message(Command('other'))
 async def cmd_other_filter(message: Message):
     if message.from_user.id not in settings.ADMIN_IDS: return
-    async with db.conn.cursor() as cur:
-        await cur.execute("SELECT id, username, content, timestamp FROM feedbacks WHERE category = 'інше' ORDER BY timestamp DESC LIMIT 20")
-        rows = await cur.fetchall()
+    async with db.pool.connection() as conn:
+        async with conn.cursor() as cur:
+            await cur.execute("SELECT id, username, content, timestamp FROM feedbacks WHERE category = 'інше' ORDER BY timestamp DESC LIMIT 20")
+            rows = await cur.fetchall()
 
     if not rows:
         await message.answer("💬 Немає інших повідомлень")
