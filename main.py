@@ -27,6 +27,18 @@ async def main():
 
     logger.info("🚀 Ініціалізація бота...")
 
+    # Перевірка конфігурації
+    try:
+        logger.info(f"📋 Конфігурація:")
+        logger.info(f"  - Канал ID: {settings.CHANNEL_ID}")
+        logger.info(f"  - Адмінів налаштовано: {len(settings.ADMIN_IDS)}")
+        logger.info(f"  - ID адмінів: {settings.ADMIN_IDS}")
+        logger.info(f"  ⚠️  УВАГА: Всі адміни ПОВИННІ запустити бота командою /start!")
+    except Exception as e:
+        logger.critical(f"❌ Помилка конфігурації: {e}")
+        logger.critical("💡 Перевірте файл .env та переконайтесь, що всі змінні встановлені")
+        return
+
     # Підключення до БД
     try:
         await db.connect()
@@ -45,6 +57,21 @@ async def main():
     # Підключення роутерів (порядок важливий!)
     # Спочатку admin (щоб перехоплювати команди адміна), потім інші
     dp.include_routers(admin_router, start_router, news_router, ad_router, other_router)
+
+    # Обробник необроблених оновлень (завжди останній!)
+    @dp.update()
+    async def catch_unhandled_updates(update):
+        """Логує оновлення, які не були оброблені жодним хендлером"""
+        logger.warning(f"⚠️ Необроблене оновлення: {update.update_id}")
+        if update.message:
+            logger.info(f"  Тип: повідомлення від {update.message.from_user.id}")
+            if update.message.text:
+                logger.info(f"  Текст: {update.message.text[:50]}...")
+        elif update.callback_query:
+            logger.info(f"  Тип: callback від {update.callback_query.from_user.id}")
+            logger.info(f"  Data: {update.callback_query.data}")
+        else:
+            logger.info(f"  Тип: {type(update)}")
 
     logger.info("🗑️ Очищення черги старих оновлень...")
     # Це критично важливо, якщо бот довго не працював або "завис"

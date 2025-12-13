@@ -46,6 +46,9 @@ async def notify_admins(
             ]
         ])
 
+    successful_sends = 0
+    failed_admins = []
+
     for admin_id in settings.ADMIN_IDS:
         try:
             if photo:
@@ -60,6 +63,20 @@ async def notify_admins(
             else:
                 await bot.send_message(admin_id, user_info, reply_markup=admin_kb,
                                      parse_mode=ParseMode.HTML)
+            successful_sends += 1
+            logger.info(f"✅ Повідомлення надіслано адміну {admin_id}")
         except Exception as e:
-            logger.error(f"⚠️ Не вдалося надіслати адміну {admin_id}. Причина: {e}")
-            # Часто буває, що адмін не натиснув /start в боті
+            error_msg = str(e)
+            if "chat not found" in error_msg or "Forbidden" in error_msg:
+                logger.warning(f"⚠️ Адмін {admin_id} не запустив бота! Попросіть його натиснути /start")
+                failed_admins.append(admin_id)
+            else:
+                logger.error(f"⚠️ Помилка надсилання адміну {admin_id}: {e}")
+                failed_admins.append(admin_id)
+
+    if successful_sends > 0:
+        logger.info(f"📨 Повідомлення доставлено {successful_sends}/{len(settings.ADMIN_IDS)} адмінам")
+
+    if failed_admins:
+        logger.warning(f"❌ Не доставлено адмінам: {failed_admins}")
+        logger.warning("💡 Переконайтесь, що всі адміни запустили бота командою /start")
