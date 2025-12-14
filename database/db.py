@@ -1,9 +1,10 @@
-# database/db.py — ВИПРАВЛЕНА ВЕРСІЯ (З CONNECTION POOL)
+# database/db.py — ПОВНА ВЕРСІЯ З CONNECTION POOL
 import psycopg
 from psycopg.rows import dict_row
 from psycopg_pool import AsyncConnectionPool
 from datetime import datetime
 from config import settings
+
 
 class DB:
     def __init__(self):
@@ -12,20 +13,21 @@ class DB:
 
     async def connect(self):
         """Створює пул з'єднань до бази даних"""
-        # Створюємо пул. row_factory передаємо в kwargs, щоб отримувати результати як словники
         self.pool = AsyncConnectionPool(
             conninfo=self.dsn,
             min_size=1,
-            max_size=20,  # Максимальна кількість одночасних з'єднань
+            max_size=20,  # Оптимально для більшості ботів
             kwargs={"row_factory": dict_row}
         )
         await self.pool.open()
         await self.create_tables()
+        print("База даних підключена (Connection Pool).")
 
     async def close(self):
         """Закриває пул з'єднань при зупинці бота"""
         if self.pool:
             await self.pool.close()
+            print("З'єднання з базою даних закрито.")
 
     async def create_tables(self):
         async with self.pool.connection() as conn:
@@ -43,7 +45,7 @@ class DB:
                         timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                     )
                 ''')
-                # Додавання колонок, якщо їх немає (міграції на льоту)
+                # Міграції: додаємо колонки, якщо їх немає
                 await cur.execute('''
                     ALTER TABLE feedbacks ADD COLUMN IF NOT EXISTS photo_file_id TEXT
                 ''')
@@ -71,7 +73,6 @@ class DB:
                         timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                     )
                 ''')
-            # Commit відбувається автоматично при виході з контекстного менеджера connection
 
     async def add_feedback(self, user_id: int, username: str, category: str, content: str,
                           photo_file_id: str | None = None, video_file_id: str | None = None,
@@ -82,7 +83,8 @@ class DB:
                     "INSERT INTO feedbacks (user_id, username, category, content, photo_file_id, video_file_id, document_file_id) VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING id",
                     (user_id, username, category, content, photo_file_id, video_file_id, document_file_id)
                 )
-                feedback_id = (await cur.fetchone())["id"]
+                result = await cur.fetchone()
+                feedback_id = result["id"]
                 
                 await cur.execute(
                     "INSERT INTO rate_limits (user_id, last_feedback) VALUES (%s, CURRENT_TIMESTAMP) ON CONFLICT (user_id) DO UPDATE SET last_feedback = CURRENT_TIMESTAMP",
@@ -143,7 +145,8 @@ class DB:
                     "INSERT INTO replies (feedback_id, admin_id, reply_text) VALUES (%s, %s, %s) RETURNING id",
                     (feedback_id, admin_id, reply_text)
                 )
-                reply_id = (await cur.fetchone())["id"]
+                result = await cur.fetchone()
+                reply_id = result["id"]
         return reply_id
 
     async def update_group_message_id(self, feedback_id: int, group_message_id: int) -> None:
@@ -161,5 +164,6 @@ class DB:
             async with conn.cursor() as cur:
                 await cur.execute("SELECT * FROM feedbacks WHERE group_message_id = %s", (group_message_id,))
                 return await cur.fetchone()
+
 
 db = DB()
