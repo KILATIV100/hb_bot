@@ -12,9 +12,6 @@ router = Router()
 
 @router.message(F.text.in_(["💬 Зворотний зв'язок", "💬 Інше повідомлення", "Інше повідомлення"]))
 async def start_other(message: Message, state: FSMContext):
-    if not await db.check_rate_limit(message.from_user.id):
-        await message.answer("🚫 Будь ласка, зачекай 10 секунд.")
-        return
     await state.set_state(FeedbackStates.waiting_for_other)
     await state.update_data(feedback_type="other")
     await message.answer("💬 Напишіть нам:\n\nПитання, пропозиція чи просто відгук. Слухаємо вас!")

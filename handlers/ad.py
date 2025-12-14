@@ -12,9 +12,6 @@ router = Router()
 
 @router.message(F.text.in_(["📢 Щодо реклами", "Запит про рекламу"]))
 async def start_ad(message: Message, state: FSMContext):
-    if not await db.check_rate_limit(message.from_user.id):
-        await message.answer("🚫 Будь ласка, зачекай 10 секунд.")
-        return
     await state.set_state(FeedbackStates.waiting_for_ad)
     await state.update_data(feedback_type="ad")
     await message.answer("📢 Запит на рекламу:\n\nОпишіть вашу пропозицію або надішліть рекламний макет.")

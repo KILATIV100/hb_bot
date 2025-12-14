@@ -115,10 +115,6 @@ async def handle_direct_message(message: Message, bot: Bot):
          return
 
     try:
-        if not await db.check_rate_limit(message.from_user.id):
-            await message.answer("Зачекай 1 хвилину перед наступною відправкою 🚫")
-            return
-
         username = message.from_user.username or "Без імені"
 
         # Додаємо feedback як "інше"

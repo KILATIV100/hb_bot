@@ -12,9 +12,6 @@ router = Router()
 
 @router.message(F.text.in_(["📰 Надіслати новину", "Надіслати новину"]))
 async def start_news(message: Message, state: FSMContext):
-    if not await db.check_rate_limit(message.from_user.id):
-        await message.answer("🚫 Будь ласка, зачекай 10 секунд.")
-        return
     await state.set_state(FeedbackStates.waiting_for_news)
     await state.update_data(feedback_type="news")
     await message.answer("📰 Надішли новину:\n\nНапиши текст, додай фото або відео (можна альбомом).")
