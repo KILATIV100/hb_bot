@@ -1,6 +1,5 @@
 import asyncio
 import logging
-import sys
 from aiogram import Bot, Dispatcher
 from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.client.default import DefaultBotProperties
@@ -16,108 +15,34 @@ from handlers.ad import router as ad_router
 from handlers.other import router as other_router
 from handlers.admin import admin_router
 
-# Middleware
-from utils.album_middleware import AlbumMiddleware
-
 async def main():
-    # Налаштування логування: додаємо час і рівень важливості
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s - %(levelname)s - %(name)s - %(message)s",
-        stream=sys.stdout
-    )
-    logger = logging.getLogger(__name__)
-
-    logger.info("🚀 Ініціалізація бота...")
-
-    # Перевірка конфігурації
-    try:
-        logger.info(f"📋 Конфігурація:")
-        logger.info(f"  - Канал ID: {settings.CHANNEL_ID}")
-        logger.info(f"  - Адмінів налаштовано: {len(settings.ADMIN_IDS)}")
-        logger.info(f"  - ID адмінів: {settings.ADMIN_IDS}")
-        logger.info(f"  ⚠️  УВАГА: Всі адміни ПОВИННІ запустити бота командою /start!")
-    except Exception as e:
-        logger.critical(f"❌ Помилка конфігурації: {e}")
-        logger.critical("💡 Перевірте файл .env та переконайтесь, що всі змінні встановлені")
-        return
-
-    # Підключення до БД
-    try:
-        await db.connect()
-    except Exception as e:
-        logger.critical(f"❌ Критична помилка підключення до БД: {e}")
-        # Без бази бот не має сенсу, тому зупиняємо
-        return
+    logging.basicConfig(level=logging.INFO)
+    
+    # Підключаємось до БД
+    await db.connect()
 
     bot = Bot(
         token=settings.BOT_TOKEN,
         default=DefaultBotProperties(parse_mode=ParseMode.HTML)
     )
-
     dp = Dispatcher(storage=MemoryStorage())
-
-    # Підключення AlbumMiddleware для обробки медіа-груп
-    album_middleware = AlbumMiddleware(latency=0.5)
-    news_router.message.middleware(album_middleware)
-    ad_router.message.middleware(album_middleware)
-    other_router.message.middleware(album_middleware)
-    logger.info("📦 AlbumMiddleware підключено")
-
-    # Підключення роутерів (порядок важливий!)
-    # Спочатку admin (щоб перехоплювати команди адміна), потім інші
+    
+    # Реєструємо роутери
     dp.include_routers(admin_router, start_router, news_router, ad_router, other_router)
 
-    # Обробник необроблених оновлень (завжди останній!)
-    @dp.update()
-    async def catch_unhandled_updates(update):
-        """Логує оновлення, які не були оброблені жодним хендлером"""
-        logger.warning(f"⚠️ Необроблене оновлення: {update.update_id}")
-        if update.message:
-            logger.info(f"  Тип: повідомлення від {update.message.from_user.id}")
-            if update.message.text:
-                logger.info(f"  Текст: {update.message.text[:50]}...")
-        elif update.callback_query:
-            logger.info(f"  Тип: callback від {update.callback_query.from_user.id}")
-            logger.info(f"  Data: {update.callback_query.data}")
-        else:
-            logger.info(f"  Тип: {type(update)}")
-
-    logger.info("🗑️ Очищення черги старих оновлень...")
-    # Це критично важливо, якщо бот довго не працював або "завис"
+    print("Бот для новинного каналу запущений! Аналітика + UI/UX — все на рівні.")
+    
     try:
-        await bot.delete_webhook(drop_pending_updates=True)
-        logger.info("✅ Webhook видалено (якщо був встановлений)")
-
-        # Додаткова затримка, щоб Telegram обробив видалення
-        await asyncio.sleep(2)
-
-        # Перевіряємо чи можемо отримувати оновлення
-        logger.info("🔄 Тестування з'єднання...")
-        await bot.get_me()
-    except Exception as e:
-        logger.error(f"⚠️ Помилка при підготовці: {e}")
-        if "Conflict" in str(e):
-            logger.critical("🚨 КОНФЛІКТ: Інший екземпляр бота вже запущений!")
-            logger.critical("   Зупиніть всі інші екземпляри та спробуйте знову")
-            await bot.session.close()
-            return
-
-    logger.info("✅ Бот запущений! Очікую повідомлень...")
-
-    try:
+        # Запуск поллінгу
         await dp.start_polling(bot)
-    except Exception as e:
-        logger.error(f"❌ Помилка в процесі роботи (polling): {e}")
     finally:
         # Коректне завершення роботи
-        if hasattr(db, 'pool') and db.pool:
-            await db.pool.close()
-            logger.info("🛑 З'єднання з БД закрито.")
-        logger.info("👋 Бот зупинений.")
+        print("Зупинка бота...")
+        await db.close()
+        await bot.session.close()
 
 if __name__ == "__main__":
     try:
         asyncio.run(main())
-    except KeyboardInterrupt:
-        print("Бот вимкнений вручну (Ctrl+C)")
+    except (KeyboardInterrupt, SystemExit):
+        print("Бот зупинений.")
